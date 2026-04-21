@@ -19,6 +19,7 @@
   --warning: #f97316;
   --success: #1e40af;
   --shadow: 0 16px 40px rgba(30, 58, 138, 0.12);
+  --shadow-soft: 0 10px 24px rgba(30, 58, 138, 0.1);
   --radius-lg: 28px;
   --radius-md: 18px;
   --radius-sm: 12px;
@@ -249,7 +250,7 @@ th {
 .login-form,
 .form-grid {
   display: grid;
-  gap: 16px;
+  gap: 18px;
 }
 
 .login-form label,
@@ -342,20 +343,22 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 14px;
-  min-height: 48px;
-  padding: 12px 18px;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  min-height: 50px;
+  padding: 12px 20px;
   cursor: pointer;
   font-size: 0.96rem;
   font-weight: 700;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 .btn:hover,
 .table-action:hover,
 .icon-button:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .btn-primary {
@@ -370,9 +373,14 @@ textarea {
 }
 
 .btn-secondary {
-  background: rgba(219, 234, 254, 0.52);
+  background: rgba(255, 255, 255, 0.92);
   color: var(--text);
-  border: 1px solid rgba(30, 58, 138, 0.12);
+  border: 1px solid rgba(30, 58, 138, 0.14);
+}
+
+.btn-secondary:hover {
+  background: rgba(219, 234, 254, 0.72);
+  box-shadow: 0 12px 24px rgba(30, 58, 138, 0.12);
 }
 
 .btn-block {
@@ -422,7 +430,7 @@ textarea {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   padding: 22px;
   background: linear-gradient(180deg, rgba(30, 58, 138, 0.98), rgba(30, 64, 175, 0.96));
   color: #eff7f5;
@@ -471,27 +479,66 @@ textarea {
 
 .sidebar-nav {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
-  border: none;
-  background: transparent;
+  gap: 12px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
   color: rgba(239, 247, 245, 0.88);
   text-align: left;
-  min-height: 50px;
-  padding: 14px 16px;
-  border-radius: 16px;
+  min-height: 54px;
+  padding: 12px 14px;
+  border-radius: 18px;
   font-size: 0.98rem;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .nav-link.active,
 .nav-link:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.12);
   color: white;
+  box-shadow: 0 12px 24px rgba(8, 15, 38, 0.18);
+}
+
+.nav-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.96);
+  flex-shrink: 0;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.nav-link-label {
+  flex: 1 1 auto;
+}
+
+.nav-link svg,
+.icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nav-link.active .nav-link-icon,
+.nav-link:hover .nav-link-icon {
+  background: rgba(249, 115, 22, 0.2);
+  color: #ffffff;
 }
 
 .sidebar-footer {
@@ -519,10 +566,10 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 22px;
-  padding: 18px 22px;
-  border-radius: 24px;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding: 14px 18px;
+  border-radius: 22px;
   background: linear-gradient(135deg, rgba(30, 58, 138, 0.98), rgba(30, 64, 175, 0.96));
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(16px);
@@ -534,7 +581,7 @@ textarea {
 .user-chip {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .topbar-right {
@@ -543,23 +590,24 @@ textarea {
 }
 
 .topbar-left h1 {
-  margin: 4px 0 0;
-  font-size: 1.85rem;
+  margin: 2px 0 0;
+  font-size: 1.68rem;
   color: #ffffff;
 }
 
 .topbar-brand-block {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .topbar-left .eyebrow {
   color: rgba(219, 234, 254, 0.92);
+  font-size: 0.74rem;
 }
 
 .user-chip {
-  padding: 10px 14px;
-  border-radius: 16px;
+  padding: 8px 12px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
@@ -577,16 +625,17 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
+  border: 1px solid rgba(30, 58, 138, 0.12);
   background: rgba(219, 234, 254, 0.75);
   color: var(--brand);
-  border-radius: 12px;
+  border-radius: 14px;
   min-height: 46px;
   min-width: 46px;
   padding: 10px 12px;
   cursor: pointer;
-  text-transform: lowercase;
   font-weight: 700;
+  box-shadow: var(--shadow-soft);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 .topbar .btn-secondary,
@@ -605,7 +654,7 @@ textarea {
 
 .page-content {
   display: grid;
-  gap: 22px;
+  gap: 26px;
   min-width: 0;
 }
 
@@ -614,7 +663,7 @@ textarea {
 .toolbar-panel,
 .chart-card {
   border-radius: 26px;
-  padding: 24px;
+  padding: 26px;
   background: var(--surface);
   border: 1px solid rgba(30, 58, 138, 0.08);
   box-shadow: var(--shadow);
@@ -668,13 +717,13 @@ textarea {
 }
 
 .toolbar-panel {
-  padding: 18px;
+  padding: 20px;
 }
 
 .toolbar-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 16px;
   align-items: end;
 }
 
@@ -720,7 +769,7 @@ textarea {
 
 .metrics-grid {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .metrics-grid-5 {
@@ -737,8 +786,8 @@ textarea {
 
 .metric-card {
   display: grid;
-  gap: 8px;
-  padding: 22px;
+  gap: 10px;
+  padding: 24px;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(30, 58, 138, 0.08);
@@ -762,28 +811,49 @@ textarea {
 }
 
 .metric-label {
-  color: var(--muted);
-  font-size: 0.9rem;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .metric-value {
-  font-size: 1.7rem;
-  line-height: 1.1;
+  font-size: 2rem;
+  line-height: 1.05;
+  color: var(--brand);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .metric-helper {
-  color: var(--muted);
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.metric-warning .metric-value {
+  color: var(--accent-strong);
+}
+
+.metric-danger .metric-value {
+  color: var(--danger);
+}
+
+.metric-success .metric-value {
+  color: #1d4ed8;
 }
 
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 20px;
 }
 
 .page-grid {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .page-grid-2 {
@@ -795,11 +865,11 @@ textarea {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .section-header.compact {
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .section-header h3 {
@@ -822,7 +892,7 @@ textarea {
 
 .form-actions {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
 }
 
@@ -833,6 +903,7 @@ textarea {
   border-radius: 18px;
   border: 1px solid rgba(30, 58, 138, 0.08);
   background: rgba(255, 255, 255, 0.96);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
 .data-table {
@@ -853,8 +924,28 @@ textarea {
   vertical-align: top;
 }
 
+.data-table th {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #334155;
+}
+
+.data-table tbody tr {
+  transition: background 0.18s ease;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: rgba(248, 250, 252, 0.9);
+}
+
 .data-table tbody tr:hover {
-  background: rgba(219, 234, 254, 0.34);
+  background: rgba(219, 234, 254, 0.48);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .data-table td strong {
@@ -869,7 +960,7 @@ textarea {
 
 .table-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   justify-content: flex-end;
 }
 
@@ -877,15 +968,15 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 12px;
-  min-height: 42px;
-  padding: 9px 12px;
-  background: rgba(219, 234, 254, 0.72);
-  color: var(--brand);
   border: 1px solid rgba(30, 58, 138, 0.1);
+  border-radius: 14px;
+  min-height: 42px;
+  padding: 9px 13px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--brand);
   cursor: pointer;
   font-weight: 700;
+  box-shadow: 0 8px 18px rgba(30, 58, 138, 0.08);
 }
 
 .table-action.danger {
@@ -1265,6 +1356,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .app-main {
+    padding: 18px;
+  }
+
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
@@ -1300,6 +1395,10 @@ textarea {
   .topbar-right {
     width: 100%;
     gap: 10px;
+  }
+
+  .topbar-left .eyebrow {
+    font-size: 0.72rem;
   }
 
   .topbar-brand-image {
@@ -1364,6 +1463,10 @@ textarea {
   .toolbar-search {
     min-width: 0;
   }
+
+  .table-wrapper {
+    border-radius: 16px;
+  }
 }
 
 @media (max-width: 680px) {
@@ -1384,12 +1487,13 @@ textarea {
   }
 
   .topbar {
-    padding: 16px;
-    border-radius: 20px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    margin-bottom: 18px;
   }
 
   .topbar-left h1 {
-    font-size: 1.45rem;
+    font-size: 1.38rem;
   }
 
   .sidebar-brand-image,
@@ -1413,12 +1517,22 @@ textarea {
     font-size: 1rem;
   }
 
+  .nav-link {
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
+  .nav-link-icon {
+    width: 40px;
+    height: 40px;
+  }
+
   .topbar-right {
     align-items: stretch;
   }
 
   .data-table {
-    min-width: 560px;
+    min-width: 520px;
   }
 
   .data-table th,
@@ -1455,7 +1569,7 @@ textarea {
   }
 
   .topbar-left h1 {
-    font-size: 1.3rem;
+    font-size: 1.24rem;
   }
 
   .sidebar-brand-image,
@@ -1465,5 +1579,13 @@ textarea {
 
   .user-chip {
     padding: 10px 12px;
+  }
+
+  .page-content {
+    gap: 18px;
+  }
+
+  .nav-link-label {
+    font-size: 0.96rem;
   }
 }

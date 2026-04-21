@@ -92,16 +92,62 @@
             <span>Gestão premium da operação</span>
           </div>
         </div>
-        <button id="close-sidebar" class="icon-button mobile-only" type="button">x</button>
+        <button id="close-sidebar" class="icon-button mobile-only" type="button" aria-label="Fechar menu">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6 18 18M18 6 6 18"></path>
+          </svg>
+        </button>
       </div>
 
       <nav class="sidebar-nav">
-        <button class="nav-link active" data-page="dashboard">Dashboard</button>
-        <button class="nav-link" data-page="sales">Vendas</button>
-        <button class="nav-link" data-page="quotes">Orçamentos</button>
-        <button class="nav-link" data-page="expenses">Contas Pagas</button>
-        <button class="nav-link" data-page="checks">Cheques</button>
-        <button class="nav-link" data-page="reports">Relatórios</button>
+        <button class="nav-link active" data-page="dashboard">
+          <span class="nav-link-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 5h7v6H4zM13 5h7v10h-7zM4 13h7v6H4zM13 17h7v2h-7z"></path>
+            </svg>
+          </span>
+          <span class="nav-link-label">Dashboard</span>
+        </button>
+        <button class="nav-link" data-page="sales">
+          <span class="nav-link-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm3 3h10M8 14h2m3 0h3"></path>
+            </svg>
+          </span>
+          <span class="nav-link-label">Vendas</span>
+        </button>
+        <button class="nav-link" data-page="quotes">
+          <span class="nav-link-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M8 4h8l4 4v12H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm8 0v4h4M10 12h6M10 16h6"></path>
+            </svg>
+          </span>
+          <span class="nav-link-label">Orçamentos</span>
+        </button>
+        <button class="nav-link" data-page="expenses">
+          <span class="nav-link-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 7h16v10H4zM7 11h3m4 0h3m-8 4h8"></path>
+            </svg>
+          </span>
+          <span class="nav-link-label">Contas Pagas</span>
+        </button>
+        <button class="nav-link" data-page="checks">
+          <span class="nav-link-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm3-2V4m10 2V4M8 12h5m-5 4h8"></path>
+            </svg>
+          </span>
+          <span class="nav-link-label">Cheques</span>
+        </button>
+        <button class="nav-link" data-page="reports">
+          <span class="nav-link-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M5 19V9m7 10V5m7 14v-7M3 19h18"></path>
+            </svg>
+          </span>
+          <span class="nav-link-label">Relatórios</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -115,7 +161,11 @@
     <div class="app-main">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="open-sidebar" class="icon-button mobile-only" type="button">menu</button>
+          <button id="open-sidebar" class="icon-button mobile-only" type="button" aria-label="Abrir menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+          </button>
           <div class="topbar-brand-block">
             <span class="eyebrow">MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS</span>
             <h1 id="page-title">Dashboard</h1>
