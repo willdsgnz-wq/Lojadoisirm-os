@@ -25,6 +25,8 @@ import { renderBadge, renderBarChart, renderEmptyState, renderMetricCard, render
 
 const BRAND_NAME = "MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS";
 const QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"];
+const NOTIFICATION_SESSION_KEY = "doisirmaos.notifications.v1";
+const NOTIFICATION_GREETING_NAME = "Sergio";
 
 const pageTitles = {
   dashboard: "Dashboard",
@@ -50,6 +52,10 @@ const state = {
   pwa: {
     deferredPrompt: null,
     installReady: false,
+  },
+  notifications: {
+    items: [],
+    open: false,
   },
   data: {
     products: [],
@@ -116,6 +122,13 @@ const elements = {
   currentUserName: document.getElementById("current-user-name"),
   installAppButton: document.getElementById("install-app-button"),
   logoutButton: document.getElementById("logout-button"),
+  notificationCenter: document.getElementById("notification-center"),
+  notificationsButton: document.getElementById("notifications-button"),
+  notificationsBadge: document.getElementById("notifications-badge"),
+  notificationsPanel: document.getElementById("notifications-panel"),
+  notificationsList: document.getElementById("notifications-list"),
+  notificationsClearButton: document.getElementById("notifications-clear"),
+  notificationsSubtitle: document.getElementById("notifications-subtitle"),
   toastContainer: document.getElementById("toast-container"),
   sidebar: document.getElementById("sidebar"),
   sidebarBackdrop: document.getElementById("sidebar-backdrop"),
@@ -147,6 +160,9 @@ function bindGlobalEvents() {
   elements.loginForm.addEventListener("submit", handleLoginSubmit);
   elements.installAppButton?.addEventListener("click", handleInstallApp);
   elements.logoutButton.addEventListener("click", handleLogout);
+  elements.notificationsButton?.addEventListener("click", handleNotificationsToggle);
+  elements.notificationsClearButton?.addEventListener("click", handleClearNotifications);
+  elements.notificationsList?.addEventListener("click", handleNotificationListClick);
   elements.openSidebarButton.addEventListener("click", () => toggleSidebar(true));
   elements.closeSidebarButton.addEventListener("click", () => toggleSidebar(false));
   elements.sidebarBackdrop.addEventListener("click", () => toggleSidebar(false));
@@ -164,6 +180,8 @@ function bindGlobalEvents() {
   elements.pageContent.addEventListener("submit", handlePageSubmit, true);
   elements.pageContent.addEventListener("change", handlePageChange);
   elements.pageContent.addEventListener("input", handlePageInput);
+  document.addEventListener("click", handleDocumentClick);
+  document.addEventListener("keydown", handleGlobalKeyDown);
   window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   window.addEventListener("appinstalled", handleAppInstalled);
 }
@@ -172,6 +190,9 @@ function bindGlobalEvents() {
 function showLogin() {
   elements.loginView.classList.remove("hidden");
   elements.appShell.classList.add("hidden");
+  state.notifications.items = [];
+  state.notifications.open = false;
+  renderNotifications();
   updateInstallButtonVisibility();
 }
 
@@ -180,6 +201,7 @@ function showApp() {
   elements.loginView.classList.add("hidden");
   elements.appShell.classList.remove("hidden");
   elements.currentUserName.textContent = state.user?.full_name || "Administrador";
+  renderNotifications();
   updateInstallButtonVisibility();
 }
 
@@ -224,6 +246,199 @@ function updateInstallButtonVisibility() {
   const appVisible = !elements.appShell.classList.contains("hidden");
   const shouldShow = appVisible && !isStandaloneMode() && (state.pwa.installReady || isMobileInstallSurface());
   elements.installAppButton.classList.toggle("hidden", !shouldShow);
+}
+
+
+function localTodayIso() {
+  const today = new Date();
+  const year = String(today.getFullYear());
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+
+function readNotificationSessionState() {
+  try {
+    const rawValue = window.sessionStorage.getItem(NOTIFICATION_SESSION_KEY);
+    if (!rawValue) {
+      return { dismissedIds: [] };
+    }
+    const parsedValue = JSON.parse(rawValue);
+    return {
+      dismissedIds: Array.isArray(parsedValue?.dismissedIds) ? parsedValue.dismissedIds : [],
+    };
+  } catch {
+    return { dismissedIds: [] };
+  }
+}
+
+
+function writeNotificationSessionState(nextState) {
+  try {
+    window.sessionStorage.setItem(
+      NOTIFICATION_SESSION_KEY,
+      JSON.stringify({
+        dismissedIds: [...new Set(nextState?.dismissedIds || [])],
+      }),
+    );
+  } catch {
+    // Se o navegador bloquear sessionStorage, o centro de notificações segue funcionando só em memória.
+  }
+}
+
+
+function buildNotifications() {
+  const today = localTodayIso();
+  const dismissedIds = new Set(readNotificationSessionState().dismissedIds);
+  const notifications = [];
+
+  const checksDueToday = state.data.checks.filter((check) => (
+    check.due_date === today
+    && !["Compensado", "Cancelado"].includes(check.effective_status || check.status || "")
+  ));
+
+  const totalDueToday = sumBy(checksDueToday, (check) => check.amount);
+  const todayCheckNotificationId = `checks-due-today-${today}`;
+
+  if (checksDueToday.length && totalDueToday > 0 && !dismissedIds.has(todayCheckNotificationId)) {
+    notifications.push({
+      id: todayCheckNotificationId,
+      tone: "warning",
+      title: "Cheque previsto para hoje",
+      message: `Olá ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(totalDueToday)} de cheque para cair!`,
+      meta: `${checksDueToday.length} cheque(s) com data prevista em ${formatDate(today)}.`,
+    });
+  }
+
+  return notifications;
+}
+
+
+function renderNotifications() {
+  const items = state.notifications.items || [];
+  const count = items.length;
+
+  if (elements.notificationsBadge) {
+    elements.notificationsBadge.textContent = String(count);
+    elements.notificationsBadge.classList.toggle("hidden", count === 0);
+  }
+
+  if (elements.notificationsButton) {
+    elements.notificationsButton.setAttribute("aria-expanded", state.notifications.open ? "true" : "false");
+  }
+
+  if (elements.notificationsPanel) {
+    elements.notificationsPanel.classList.toggle("hidden", !state.notifications.open);
+  }
+
+  if (elements.notificationsClearButton) {
+    elements.notificationsClearButton.classList.toggle("hidden", count === 0);
+  }
+
+  if (elements.notificationsSubtitle) {
+    elements.notificationsSubtitle.textContent = count
+      ? `${count} notificação(ões) ativa(s)`
+      : "Sem alertas no momento.";
+  }
+
+  if (elements.notificationsList) {
+    elements.notificationsList.innerHTML = count
+      ? items.map((notification) => `
+        <article class="notification-item notification-${escapeHtml(notification.tone || "default")}">
+          <div class="notification-copy">
+            <strong>${escapeHtml(notification.title)}</strong>
+            <p>${escapeHtml(notification.message)}</p>
+            ${notification.meta ? `<small>${escapeHtml(notification.meta)}</small>` : ""}
+          </div>
+          <button
+            type="button"
+            class="notification-remove"
+            data-notification-id="${escapeHtml(notification.id)}"
+            aria-label="Dispensar notificação"
+          >
+            ×
+          </button>
+        </article>
+      `).join("")
+      : `
+        <div class="notifications-empty">
+          <strong>Nenhuma notificação</strong>
+          <span>Quando surgir algum alerta importante, ele aparecerá aqui.</span>
+        </div>
+      `;
+  }
+}
+
+
+function refreshNotifications() {
+  state.notifications.items = buildNotifications();
+  if (!state.notifications.items.length) {
+    state.notifications.open = false;
+  }
+  renderNotifications();
+}
+
+
+function dismissNotifications(ids = []) {
+  const validIds = ids.filter(Boolean);
+  if (!validIds.length) return;
+
+  const sessionState = readNotificationSessionState();
+  const dismissedIds = new Set(sessionState.dismissedIds);
+  validIds.forEach((id) => dismissedIds.add(id));
+  writeNotificationSessionState({ dismissedIds: [...dismissedIds] });
+
+  state.notifications.items = state.notifications.items.filter((item) => !dismissedIds.has(item.id));
+  if (!state.notifications.items.length) {
+    state.notifications.open = false;
+  }
+  renderNotifications();
+}
+
+
+function handleNotificationsToggle(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  state.notifications.open = !state.notifications.open;
+  renderNotifications();
+}
+
+
+function handleClearNotifications(event) {
+  event.preventDefault();
+  dismissNotifications(state.notifications.items.map((item) => item.id));
+  showToast("Notificações limpas.", "info");
+}
+
+
+function handleNotificationListClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const removeButton = target.closest("[data-notification-id]");
+  if (!removeButton) return;
+
+  dismissNotifications([removeButton.dataset.notificationId]);
+}
+
+
+function handleDocumentClick(event) {
+  if (!state.notifications.open) return;
+  const target = event.target;
+  if (!(target instanceof Node)) return;
+  if (elements.notificationCenter?.contains(target)) return;
+
+  state.notifications.open = false;
+  renderNotifications();
+}
+
+
+function handleGlobalKeyDown(event) {
+  if (event.key === "Escape" && state.notifications.open) {
+    state.notifications.open = false;
+    renderNotifications();
+  }
 }
 
 
@@ -290,6 +505,8 @@ async function handleLogout() {
     await api.logout();
   } finally {
     state.user = null;
+    state.notifications.items = [];
+    state.notifications.open = false;
     showLogin();
     showToast("Sessão encerrada.", "info");
   }
@@ -309,6 +526,7 @@ async function loadData() {
     options: payload.options || state.data.options,
   };
   elements.currentUserName.textContent = state.user.full_name;
+  refreshNotifications();
   renderCurrentPage();
 }
 

@@ -174,6 +174,32 @@
 
         <div class="topbar-right">
           <button id="install-app-button" class="btn btn-secondary hidden" type="button">Instalar app</button>
+          <div id="notification-center" class="notification-center">
+            <button
+              id="notifications-button"
+              class="icon-button notification-button"
+              type="button"
+              aria-label="Notificações"
+              aria-controls="notifications-panel"
+              aria-expanded="false"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M15 18H6a1 1 0 0 1-.8-1.6L6 15.3V11a6 6 0 1 1 12 0v4.3l.8 1.1A1 1 0 0 1 18 18h-3m0 0a3 3 0 1 1-6 0m6 0H9"></path>
+              </svg>
+              <span id="notifications-badge" class="notification-badge hidden">0</span>
+            </button>
+
+            <section id="notifications-panel" class="notifications-panel hidden" aria-label="Notificações">
+              <div class="notifications-header">
+                <div>
+                  <strong>Notificações</strong>
+                  <small id="notifications-subtitle">Sem alertas no momento.</small>
+                </div>
+                <button id="notifications-clear" class="notifications-clear hidden" type="button">Limpar todas</button>
+              </div>
+              <div id="notifications-list" class="notifications-list"></div>
+            </section>
+          </div>
           <div class="user-chip">
             <span id="current-user-name">Administrador</span>
             <small>Ambiente local</small>
