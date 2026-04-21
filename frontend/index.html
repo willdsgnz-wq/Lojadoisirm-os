@@ -8,12 +8,23 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Dois Irmãos">
+
+  <!-- Manifest -->
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg">
+
+  <!-- FAVICON CORRETO -->
+  <link rel="icon" href="/assets/icons/favicon.ico" type="image/x-icon">
+  <link rel="shortcut icon" href="/assets/icons/favicon.ico" type="image/x-icon">
+
+  <!-- Ícones mobile -->
   <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/icons/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/assets/icons/icon-512.png">
+
   <title>MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS | Gestão</title>
   <link rel="stylesheet" href="/assets/css/styles.css">
 </head>
+
 <body>
   <div id="login-view" class="login-shell">
     <section class="login-showcase">
@@ -81,7 +92,7 @@
             <span>Gestão premium da operação</span>
           </div>
         </div>
-        <button id="close-sidebar" class="icon-button mobile-only" type="button" aria-label="Fechar menu">x</button>
+        <button id="close-sidebar" class="icon-button mobile-only" type="button">x</button>
       </div>
 
       <nav class="sidebar-nav">
@@ -104,12 +115,13 @@
     <div class="app-main">
       <header class="topbar">
         <div class="topbar-left">
-          <button id="open-sidebar" class="icon-button mobile-only" type="button" aria-label="Abrir menu">menu</button>
+          <button id="open-sidebar" class="icon-button mobile-only" type="button">menu</button>
           <div class="topbar-brand-block">
             <span class="eyebrow">MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS</span>
             <h1 id="page-title">Dashboard</h1>
           </div>
         </div>
+
         <div class="topbar-right">
           <button id="install-app-button" class="btn btn-secondary hidden" type="button">Instalar app</button>
           <div class="user-chip">
