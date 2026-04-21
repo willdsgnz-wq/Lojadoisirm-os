@@ -592,6 +592,193 @@ function getPeriod(scope) {
 }
 
 
+function formatToolbarDateDisplay(value) {
+  if (!value) return "";
+  const [year, month, day] = String(value).split("-");
+  if (!year || !month || !day) return "";
+  return `${day}/${month}/${year}`;
+}
+
+
+function maskToolbarDateInput(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) {
+    return formatToolbarDateDisplay(rawValue);
+  }
+
+  const digits = rawValue.replace(/\D/g, "").slice(0, 8);
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+  return [day, month, year].filter(Boolean).join("/");
+}
+
+
+function getToolbarDateCaret(maskedValue, digitCount) {
+  if (digitCount <= 0) return 0;
+
+  let seenDigits = 0;
+  for (let index = 0; index < maskedValue.length; index += 1) {
+    if (/\d/.test(maskedValue[index])) {
+      seenDigits += 1;
+    }
+    if (seenDigits >= digitCount) {
+      return index + 1;
+    }
+  }
+
+  return maskedValue.length;
+}
+
+
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year
+    && date.getUTCMonth() === month - 1
+    && date.getUTCDate() === day
+  );
+}
+
+
+function parseToolbarDateInput(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) {
+    return isValidIsoDate(rawValue) ? rawValue : null;
+  }
+
+  const digits = rawValue.replace(/\D/g, "");
+  if (digits.length !== 8) return null;
+
+  const day = digits.slice(0, 2);
+  const month = digits.slice(2, 4);
+  const year = digits.slice(4, 8);
+  const isoValue = `${year}-${month}-${day}`;
+  return isValidIsoDate(isoValue) ? isoValue : null;
+}
+
+
+function isManualToolbarDateInput(target) {
+  return target instanceof HTMLInputElement && target.dataset.manualToolbarDate === "true";
+}
+
+
+function isToolbarDatePickerInput(target) {
+  return target instanceof HTMLInputElement && target.dataset.toolbarDatePicker === "true";
+}
+
+
+function commitManualToolbarDate(target) {
+  const toolbar = target.closest("[data-filter-scope]");
+  const scope = toolbar?.dataset.filterScope;
+  const name = target.dataset.filterName;
+  if (!scope || !name) return;
+
+  const nativePicker = toolbar.querySelector(
+    `[data-toolbar-date-picker="true"][data-filter-name="${name}"]`,
+  );
+  const parsedValue = parseToolbarDateInput(target.value);
+
+  if (!target.value.trim()) {
+    state.filters[scope][name] = "";
+    if (nativePicker) {
+      nativePicker.value = "";
+    }
+    renderCurrentPage();
+    return;
+  }
+
+  if (!parsedValue) {
+    target.value = formatToolbarDateDisplay(state.filters[scope][name] || "");
+    return;
+  }
+
+  state.filters[scope][name] = parsedValue;
+  target.value = formatToolbarDateDisplay(parsedValue);
+  if (nativePicker) {
+    nativePicker.value = parsedValue;
+  }
+  renderCurrentPage();
+}
+
+
+function commitToolbarPickerDate(target) {
+  const toolbar = target.closest("[data-filter-scope]");
+  const scope = toolbar?.dataset.filterScope;
+  const name = target.dataset.filterName;
+  if (!scope || !name) return;
+
+  const manualInput = toolbar.querySelector(
+    `[data-manual-toolbar-date="true"][data-filter-name="${name}"]`,
+  );
+  const nextValue = target.value || "";
+
+  state.filters[scope][name] = nextValue;
+  if (manualInput) {
+    manualInput.value = formatToolbarDateDisplay(nextValue);
+  }
+  renderCurrentPage();
+}
+
+
+function renderToolbarDateField({ label, name, value, manual = false }) {
+  if (!manual) {
+    return `
+      <label class="toolbar-field">
+        <span>${label}</span>
+        <input type="date" name="${name}" value="${value}">
+      </label>
+    `;
+  }
+
+  return `
+    <label class="toolbar-field">
+      <span>${label}</span>
+      <div class="toolbar-date-shell">
+        <input
+          type="text"
+          value="${escapeHtml(formatToolbarDateDisplay(value))}"
+          placeholder="dd/mm/aaaa"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="10"
+          data-manual-toolbar-date="true"
+          data-filter-name="${name}"
+          aria-label="${label}"
+        >
+        <button
+          type="button"
+          class="icon-button toolbar-date-button"
+          data-action="open-filter-date-picker"
+          data-filter-name="${name}"
+          aria-label="Abrir calendário de ${label.toLowerCase()}"
+          title="Abrir calendário"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 2v3M17 2v3M3 9h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+          </svg>
+        </button>
+        <input
+          type="date"
+          value="${escapeHtml(value || "")}"
+          class="toolbar-date-picker-native"
+          data-toolbar-date-picker="true"
+          data-filter-name="${name}"
+          tabindex="-1"
+          aria-hidden="true"
+        >
+      </div>
+    </label>
+  `;
+}
+
+
 function renderPeriodToolbar(scope, options = {}) {
   const filter = state.filters[scope];
   const {
@@ -600,7 +787,9 @@ function renderPeriodToolbar(scope, options = {}) {
     showStatus = false,
     statusOptions = [],
     showModule = false,
+    manualDateFields = [],
   } = options;
+  const manualFieldNames = new Set(manualDateFields);
 
   return `
     <section class="panel toolbar-panel" data-filter-scope="${scope}">
@@ -638,22 +827,26 @@ function renderPeriodToolbar(scope, options = {}) {
           </select>
         </label>
 
-        ${filter.preset === "day" ? `
-          <label class="toolbar-field">
-            <span>Data</span>
-            <input type="date" name="day" value="${filter.day}">
-          </label>
-        ` : ""}
+        ${filter.preset === "day" ? renderToolbarDateField({
+          label: "Data",
+          name: "day",
+          value: filter.day,
+          manual: manualFieldNames.has("day"),
+        }) : ""}
 
         ${filter.preset === "custom" ? `
-          <label class="toolbar-field">
-            <span>Início</span>
-            <input type="date" name="start" value="${filter.start}">
-          </label>
-          <label class="toolbar-field">
-            <span>Fim</span>
-            <input type="date" name="end" value="${filter.end}">
-          </label>
+          ${renderToolbarDateField({
+            label: "Início",
+            name: "start",
+            value: filter.start,
+            manual: manualFieldNames.has("start"),
+          })}
+          ${renderToolbarDateField({
+            label: "Fim",
+            name: "end",
+            value: filter.end,
+            manual: manualFieldNames.has("end"),
+          })}
         ` : ""}
 
         ${showStatus ? `
@@ -2203,6 +2396,7 @@ function renderChecksPage() {
       searchPlaceholder: "Buscar por número, beneficiário ou observação",
       showStatus: true,
       statusOptions: state.data.options.check_statuses,
+      manualDateFields: ["start", "end"],
     })}
 
     <section class="metrics-grid metrics-grid-4">
@@ -2583,6 +2777,25 @@ function handlePageClick(event) {
     "delete-check": () => deleteEntity("checks", id, "cheque"),
     "print-quote": () => openQuoteOutput(id, "print"),
     "pdf-quote": () => openQuoteOutput(id, "pdf"),
+    "open-filter-date-picker": () => {
+      const toolbar = button.closest("[data-filter-scope]");
+      const filterName = button.dataset.filterName;
+      const picker = toolbar?.querySelector(
+        `[data-toolbar-date-picker="true"][data-filter-name="${filterName}"]`,
+      );
+      if (!picker) return;
+
+      try {
+        if (typeof picker.showPicker === "function") {
+          picker.showPicker();
+          return;
+        }
+        picker.focus();
+        picker.click();
+      } catch {
+        picker.focus();
+      }
+    },
     "export-report": exportReport,
   };
 
@@ -2596,6 +2809,16 @@ function handlePageClick(event) {
 function handlePageChange(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  if (isManualToolbarDateInput(target)) {
+    commitManualToolbarDate(target);
+    return;
+  }
+
+  if (isToolbarDatePickerInput(target)) {
+    commitToolbarPickerDate(target);
+    return;
+  }
 
   const toolbar = target.closest("[data-filter-scope]");
   if (toolbar) {
@@ -2613,6 +2836,16 @@ function handlePageChange(event) {
 function handlePageInput(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  if (isManualToolbarDateInput(target)) {
+    const selectionStart = target.selectionStart ?? target.value.length;
+    const digitCount = target.value.slice(0, selectionStart).replace(/\D/g, "").length;
+    const maskedValue = maskToolbarDateInput(target.value);
+    target.value = maskedValue;
+    const caretPosition = getToolbarDateCaret(maskedValue, digitCount);
+    target.setSelectionRange(caretPosition, caretPosition);
+    return;
+  }
 
   const toolbar = target.closest("[data-filter-scope]");
   if (toolbar && target.name === "search") {

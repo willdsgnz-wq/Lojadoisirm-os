@@ -682,6 +682,42 @@ textarea {
   min-width: 240px;
 }
 
+.toolbar-date-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.toolbar-date-button {
+  min-width: 48px;
+  width: 48px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.toolbar-date-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.toolbar-date-picker-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  inset: auto;
+}
+
 .metrics-grid {
   display: grid;
   gap: 18px;
