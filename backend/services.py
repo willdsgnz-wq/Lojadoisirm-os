@@ -558,7 +558,9 @@ def list_quotes() -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT quotes.*, customers.name AS customer_name
+            SELECT
+                quotes.*,
+                COALESCE(NULLIF(TRIM(quotes.customer_name_manual), ''), customers.name) AS customer_name
             FROM quotes
             LEFT JOIN customers ON customers.id = quotes.customer_id
             ORDER BY quotes.quote_date DESC, quotes.id DESC
@@ -589,6 +591,7 @@ def create_quote(payload: dict[str, Any]) -> dict[str, Any]:
         raise ServiceError("Escolha um status de orçamento válido.")
 
     customer_id = payload.get("customer_id") or None
+    customer_name_manual = _clean_text(payload.get("customer_name_manual"))
     items, subtotal_amount = _prepare_quote_items(payload.get("items") or [])
     discount_amount = _parse_amount(payload.get("discount_amount", 0), "discount_amount", min_value=0, allow_zero=True)
     if discount_amount > subtotal_amount:
@@ -599,14 +602,16 @@ def create_quote(payload: dict[str, Any]) -> dict[str, Any]:
         cursor = connection.execute(
             """
             INSERT INTO quotes (
-                quote_date, validity_date, customer_id, subtotal_amount, discount_amount, total_amount, status, notes
+                quote_date, validity_date, customer_id, customer_name_manual, subtotal_amount,
+                discount_amount, total_amount, status, notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 quote_date,
                 validity_date,
                 int(customer_id) if customer_id else None,
+                customer_name_manual or None,
                 subtotal_amount,
                 discount_amount,
                 total_amount,
@@ -644,6 +649,11 @@ def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         status = payload.get("status") or existing["status"]
         if status not in QUOTE_STATUSES:
             raise ServiceError("Escolha um status de orçamento válido.")
+        customer_name_manual = _clean_text(
+            payload.get("customer_name_manual")
+            if payload.get("customer_name_manual") is not None
+            else existing.get("customer_name_manual")
+        )
         discount_amount = _parse_amount(
             payload.get("discount_amount", existing["discount_amount"]),
             "discount_amount",
@@ -657,14 +667,15 @@ def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         connection.execute(
             """
             UPDATE quotes
-            SET quote_date = ?, validity_date = ?, customer_id = ?, subtotal_amount = ?, discount_amount = ?,
-                total_amount = ?, status = ?, notes = ?
+            SET quote_date = ?, validity_date = ?, customer_id = ?, customer_name_manual = ?,
+                subtotal_amount = ?, discount_amount = ?, total_amount = ?, status = ?, notes = ?
             WHERE id = ?
             """,
             (
                 ensure_date(payload.get("quote_date"), existing["quote_date"]),
                 ensure_date(payload.get("validity_date"), existing["validity_date"] or existing["quote_date"]),
                 int(payload["customer_id"]) if payload.get("customer_id") else None,
+                customer_name_manual or None,
                 subtotal_amount,
                 discount_amount,
                 total_amount,
@@ -922,3 +933,24 @@ def get_bootstrap_data() -> dict[str, Any]:
             "check_statuses": CHECK_STATUSES,
         },
     }
+def create_user(data: dict[str, Any]) -> dict[str, Any]:
+    username = _require_text(data.get("username"), "username")
+    full_name = _clean_text(data.get("full_name"))
+    password = _require_text(data.get("password"), "password")
+
+    password_hash = hash_password(password)
+
+    try:
+        with get_connection() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO users (username, full_name, password_hash)
+                VALUES (?, ?, ?)
+                """,
+                (username, full_name, password_hash),
+            )
+            user_id = cursor.lastrowid
+    except UniqueViolation as exc:
+        raise ServiceError("Usuário já existe.") from exc
+
+    return get_user_by_id(user_id)

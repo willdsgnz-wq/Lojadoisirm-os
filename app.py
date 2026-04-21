@@ -9,7 +9,7 @@ from flask import Flask, Response, abort, jsonify, make_response, request, send_
 from backend import services
 from backend.auth import SESSION_COOKIE, create_session_token, verify_session_token
 from backend.config import load_environment
-from backend.db import initialize_database, should_auto_initialize
+from backend.db import initialize_database, run_runtime_migrations, should_auto_initialize
 from database.seed import seed_database
 
 
@@ -251,6 +251,7 @@ def frontend(path: str) -> Response:
 
 
 _bootstrap_database_if_enabled()
+run_runtime_migrations()
 
 
 if __name__ == "__main__":

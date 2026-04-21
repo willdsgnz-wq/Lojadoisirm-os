@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS quotes (
     quote_date TEXT NOT NULL,
     validity_date TEXT,
     customer_id BIGINT REFERENCES customers (id) ON DELETE SET NULL,
+    customer_name_manual TEXT,
     subtotal_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
     discount_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
     total_amount DOUBLE PRECISION NOT NULL,

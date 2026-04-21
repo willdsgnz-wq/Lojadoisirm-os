@@ -1,4 +1,4 @@
-import { api } from "./api.js";
+﻿import { api } from "./api.js";
 import {
   buildCsv,
   countBy,
@@ -23,7 +23,7 @@ import {
 } from "./helpers.js";
 import { renderBadge, renderBarChart, renderEmptyState, renderMetricCard, renderStatList } from "./charts.js";
 
-const BRAND_NAME = "Material de Construção Dois Irmãos";
+const BRAND_NAME = "MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS";
 const QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"];
 
 const pageTitles = {
@@ -1462,7 +1462,11 @@ function buildQuoteDraftSnapshot() {
   );
   const items = getQuoteItems(form).filter((item) => item.item_name);
   const customerSelect = form.querySelector('[name="customer_id"]');
-  const customerName = customerSelect?.selectedOptions?.[0]?.textContent?.trim() || "Cliente não informado";
+  const manualCustomerName = String(payload.customer_name_manual || "").trim();
+  const selectedCustomerName = customerSelect?.value
+    ? customerSelect.selectedOptions?.[0]?.textContent?.trim()
+    : "";
+  const customerName = manualCustomerName || selectedCustomerName || "Cliente não informado";
   const totals = getQuoteTotals(items, payload.discount_amount || 0);
 
   return {
@@ -1470,6 +1474,7 @@ function buildQuoteDraftSnapshot() {
     quote_date: payload.quote_date || todayIso(),
     validity_date: payload.validity_date || payload.quote_date || todayIso(),
     customer_name: customerName,
+    customer_name_manual: manualCustomerName,
     status: payload.status || "Pendente",
     notes: payload.notes || "",
     subtotal_amount: totals.subtotal,
@@ -1924,6 +1929,7 @@ function renderQuotesPage() {
   const editing = state.editing.quotes;
   const approvedCount = countBy(state.data.quotes, (quote) => quote.status === "Aprovado");
   const quoteItems = editing?.items?.length ? editing.items : [{}];
+  const initialCustomerManualName = editing?.customer_name_manual || "";
   const initialDiscount = Number(editing?.discount_amount || 0);
   const initialSubtotal = sumBy(quoteItems, (item) => item.total_price || (Number(item.quantity || 0) * Number(item.unit_price || 0)));
   const initialTotal = Math.max(initialSubtotal - initialDiscount, 0);
@@ -1971,7 +1977,8 @@ function renderQuotesPage() {
           <input type="hidden" name="id" value="${editing?.id ?? ""}">
           ${renderFormFeedback("quotes")}
           <label><span>Data</span><input type="date" name="quote_date" value="${editing?.quote_date || todayIso()}" required></label>
-          <label><span>Cliente</span><select name="customer_id">${renderCustomerOptions(editing?.customer_id || "")}</select></label>
+          <label><span>Nome do cliente</span><input type="text" name="customer_name_manual" value="${escapeHtml(toFormValue(initialCustomerManualName))}" placeholder="Digite manualmente, se preferir"></label>
+          <label><span>Cliente cadastrado</span><select name="customer_id">${renderCustomerOptions(editing?.customer_id || "")}</select></label>
           <label><span>Validade</span><input type="date" name="validity_date" value="${editing?.validity_date || editing?.quote_date || todayIso()}" required></label>
           <label>
             <span>Status</span>
@@ -2173,16 +2180,17 @@ function renderExpensesPage() {
 
 function renderChecksPage() {
   const period = getPeriod("checks");
-  let filteredChecks = filterByPeriod(state.data.checks, "issue_date", period);
+  const checksInPeriod = filterByPeriod(state.data.checks, "due_date", period);
+  let filteredChecks = [...checksInPeriod];
   filteredChecks = getSimpleSearchRecords(filteredChecks, ["check_number", "beneficiary", "notes"], state.filters.checks.search);
   if (state.filters.checks.status) {
     filteredChecks = filteredChecks.filter((check) => check.effective_status === state.filters.checks.status || check.status === state.filters.checks.status);
   }
   const editing = state.editing.checks;
 
-  const pendingChecks = state.data.checks.filter((check) => check.effective_status === "Pendente");
-  const compensatedChecks = state.data.checks.filter((check) => check.effective_status === "Compensado");
-  const overdueChecks = state.data.checks.filter((check) => check.effective_status === "Atrasado");
+  const pendingChecks = checksInPeriod.filter((check) => check.effective_status === "Pendente");
+  const compensatedChecks = checksInPeriod.filter((check) => check.effective_status === "Compensado");
+  const overdueChecks = checksInPeriod.filter((check) => check.effective_status === "Atrasado");
 
   return `
     ${renderHero(
@@ -2205,9 +2213,9 @@ function renderChecksPage() {
     </section>
 
     <section class="dashboard-grid">
-      ${renderBarChart({ title: "Cheques por semana", subtitle: "Últimas 8 semanas", data: groupByWeek(state.data.checks, "issue_date", (check) => check.amount, 8) })}
-      ${renderBarChart({ title: "Cheques por mês", subtitle: "Últimos 6 meses", data: groupByMonth(state.data.checks, "issue_date", (check) => check.amount, 6) })}
-      ${renderStatList({ title: "Quantidade por status", subtitle: "Situação atual", rows: getStatusTotals(state.data.checks, "effective_status", "amount"), money: true })}
+      ${renderBarChart({ title: "Cheques por semana", subtitle: "Agrupado pela data prevista", data: groupByWeek(checksInPeriod, "due_date", (check) => check.amount, 8) })}
+      ${renderBarChart({ title: "Cheques por mês", subtitle: "Agrupado pela data prevista", data: groupByMonth(checksInPeriod, "due_date", (check) => check.amount, 6) })}
+      ${renderStatList({ title: "Quantidade por status", subtitle: period.label, rows: getStatusTotals(checksInPeriod, "effective_status", "amount"), money: true })}
       ${renderStatList({
         title: "Cheques atrasados",
         subtitle: "Lista de atenção imediata",
@@ -2244,7 +2252,7 @@ function renderChecksPage() {
         <div class="section-header">
           <div>
             <h3>Lista de cheques</h3>
-            <p>Filtro aplicado pela data de emissão.</p>
+              <p>Filtro aplicado pela data prevista.</p>
           </div>
         </div>
         ${filteredChecks.length ? `
@@ -2349,21 +2357,22 @@ function buildReport() {
   }
 
   if (moduleName === "checks") {
-    const rows = filterByPeriod(state.data.checks, "issue_date", period);
+    const rows = filterByPeriod(state.data.checks, "due_date", period);
     return {
       title: "Relatório de cheques",
-      subtitle: `${period.label} (pela data de emissão)`,
+      subtitle: `${period.label} (pela data prevista)`,
       metrics: [
         { label: "Valor total", value: formatMoney(sumBy(rows, (item) => item.amount)), helper: `${rows.length} cheque(s)` },
         { label: "Atrasados", value: formatNumber(countBy(rows, (item) => item.effective_status === "Atrasado")), helper: "Cheques em atraso" },
         { label: "Pendentes", value: formatNumber(countBy(rows, (item) => item.effective_status === "Pendente")), helper: "Ainda não compensados" },
       ],
-      chart: groupByDay(rows, "issue_date", (item) => item.amount, 7),
-      tableHeaders: ["Número", "Beneficiário", "Status", "Valor"],
-      tableRows: rows.map((item) => [item.check_number, item.beneficiary, item.effective_status, formatMoney(item.amount)]),
+      chart: groupByDay(rows, "due_date", (item) => item.amount, 7),
+      tableHeaders: ["Número", "Beneficiário", "Data prevista", "Status", "Valor"],
+      tableRows: rows.map((item) => [item.check_number, item.beneficiary, formatDate(item.due_date), item.effective_status, formatMoney(item.amount)]),
       csvColumns: [
         { label: "Numero", value: (item) => item.check_number },
         { label: "Beneficiario", value: (item) => item.beneficiary },
+        { label: "DataPrevista", value: (item) => item.due_date },
         { label: "Status", value: (item) => item.effective_status },
         { label: "Valor", value: (item) => item.amount },
       ],
@@ -2847,3 +2856,5 @@ function exportReport() {
   downloadTextFile(fileName, csv);
   showToast("Relatório exportado em CSV.");
 }
+
+

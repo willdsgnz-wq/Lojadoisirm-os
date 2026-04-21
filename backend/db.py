@@ -162,5 +162,19 @@ def initialize_database() -> None:
         connection.executescript(schema)
 
 
+def run_runtime_migrations() -> None:
+    with get_connection() as connection:
+        row = connection.execute("SELECT to_regclass('public.quotes') AS table_name").fetchone()
+        if not row or not row.get("table_name"):
+            return
+
+        connection.execute(
+            """
+            ALTER TABLE quotes
+            ADD COLUMN IF NOT EXISTS customer_name_manual TEXT
+            """
+        )
+
+
 def should_auto_initialize() -> bool:
     return _truthy(os.environ.get("AUTO_INIT_DATABASE"))
