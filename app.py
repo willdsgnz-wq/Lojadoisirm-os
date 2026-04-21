@@ -18,6 +18,7 @@ load_environment()
 
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
+ASSETS_DIR = FRONTEND_DIR / "assets"
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "8000"))
 NO_CACHE_SUFFIXES = {".html", ".js", ".css", ".json", ".webmanifest"}
@@ -224,11 +225,26 @@ def api_item(entity: str, item_id: int) -> Response:
     return _json_response({"message": "Registro excluído com sucesso."})
 
 
+@app.route("/assets/<path:filename>")
+def serve_assets(filename: str) -> Response:
+    requested = (ASSETS_DIR / filename).resolve()
+    if ASSETS_DIR not in requested.parents and requested != ASSETS_DIR:
+        abort(403)
+    if not requested.is_file():
+        abort(404)
+
+    response = make_response(send_from_directory(ASSETS_DIR, filename))
+    return _set_static_headers(response, requested)
+
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def frontend(path: str) -> Response:
     if path.startswith("api/"):
         raise services.ServiceError("Rota não encontrada.", 404)
+    if path.startswith("assets/"):
+        filename = path[len("assets/") :]
+        return serve_assets(filename)
     if path == "favicon.ico":
         return Response(status=204)
     return _serve_frontend(path)
