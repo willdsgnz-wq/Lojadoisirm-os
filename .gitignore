@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.*
+.vercel/
+server.err
+server.out
+server-err.log
+server-out.log
+database/store.db

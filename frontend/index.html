@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1E3A8A">
+  <meta name="application-name" content="Material de Construção Dois Irmãos">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Dois Irmãos">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="/assets/icons/icon.svg">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <title>Material de Construção Dois Irmãos | Gestão</title>
+  <link rel="stylesheet" href="/assets/css/styles.css">
+</head>
+<body>
+  <div id="login-view" class="login-shell">
+    <section class="login-showcase">
+      <div class="showcase-badge">Sistema web para computador e celular</div>
+      <h1 class="brand-heading">
+        <span>Material de Construção</span>
+        <strong>Dois Irmãos</strong>
+      </h1>
+      <p>
+        Gestão completa para loja de materiais de construção com vendas, estoque,
+        clientes, orçamentos, contas pagas, cheques e relatórios.
+      </p>
+      <div class="showcase-grid">
+        <article class="showcase-card">
+          <strong>Dashboard claro</strong>
+          <span>Visão rápida de vendas, despesas, estoque baixo e cheques pendentes.</span>
+        </article>
+        <article class="showcase-card">
+          <strong>Cadastro completo</strong>
+          <span>Produtos, clientes, vendas, orçamentos, contas pagas e cheques em um só lugar.</span>
+        </article>
+        <article class="showcase-card">
+          <strong>Fácil de começar</strong>
+          <span>Banco local, dados de exemplo e login pronto para você testar imediatamente.</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="login-card">
+      <div class="brand-mark">2I</div>
+      <div class="login-copy">
+        <span class="eyebrow">Acesso ao sistema</span>
+        <h2>Entrar</h2>
+        <p>Entre no painel da Material de Construção Dois Irmãos com o usuário de teste.</p>
+      </div>
+
+      <form id="login-form" class="login-form">
+        <label>
+          <span>Usuário</span>
+          <input type="text" name="username" value="admin" autocomplete="username" required>
+        </label>
+        <label>
+          <span>Senha</span>
+          <input type="password" name="password" value="123456" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+      </form>
+
+      <div class="demo-card">
+        <strong>Usuário de teste</strong>
+        <span><b>Usuário:</b> admin</span>
+        <span><b>Senha:</b> 123456</span>
+      </div>
+
+      <p id="login-error" class="form-error hidden"></p>
+    </section>
+  </div>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand-mini">
+          <div class="brand-mini-mark">2I</div>
+          <div>
+            <strong>MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS</strong>
+            <span>Gestão premium da operação</span>
+          </div>
+        </div>
+        <button id="close-sidebar" class="icon-button mobile-only" type="button" aria-label="Fechar menu">x</button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-link active" data-page="dashboard">Dashboard</button>
+        <button class="nav-link" data-page="sales">Vendas</button>
+        <button class="nav-link" data-page="quotes">Orçamentos</button>
+        <button class="nav-link" data-page="expenses">Contas Pagas</button>
+        <button class="nav-link" data-page="checks">Cheques</button>
+        <button class="nav-link" data-page="reports">Relatórios</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span>Login de teste</span>
+        <strong>admin / 123456</strong>
+      </div>
+    </aside>
+
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
+
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="open-sidebar" class="icon-button mobile-only" type="button" aria-label="Abrir menu">menu</button>
+          <div class="topbar-brand-block">
+            <span class="eyebrow">MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS</span>
+            <h1 id="page-title">Dashboard</h1>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <button id="install-app-button" class="btn btn-secondary hidden" type="button">Instalar app</button>
+          <div class="user-chip">
+            <span id="current-user-name">Administrador</span>
+            <small>Ambiente local</small>
+          </div>
+          <button id="logout-button" class="btn btn-secondary" type="button">Sair</button>
+        </div>
+      </header>
+
+      <main id="page-content" class="page-content"></main>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script type="module" src="/assets/js/app.js"></script>
+</body>
+</html>

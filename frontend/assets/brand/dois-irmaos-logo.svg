@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Logo Material de Construção Dois Irmãos</title>
+  <desc id="desc">Faixa com moldura de tijolos, mascotes de obra laterais e o nome Dois Irmãos ao centro.</desc>
+  <defs>
+    <pattern id="brick" width="120" height="54" patternUnits="userSpaceOnUse">
+      <rect width="120" height="54" fill="#f15a1a"/>
+      <path d="M0 27H120M0 0H120M0 54H120" fill="none" stroke="#f4d8c8" stroke-width="4"/>
+      <path d="M0 0V27M60 27V54M120 0V27" fill="none" stroke="#f4d8c8" stroke-width="4"/>
+    </pattern>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9d9d9"/>
+      <stop offset="1" stop-color="#bfbfbf"/>
+    </linearGradient>
+    <linearGradient id="vest" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6a1f"/>
+      <stop offset="1" stop-color="#e14e12"/>
+    </linearGradient>
+    <linearGradient id="helmet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd94d"/>
+      <stop offset="1" stop-color="#f5b300"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#20335b" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="420" fill="url(#brick)"/>
+  <rect x="0" y="104" width="1200" height="212" fill="url(#panel)" stroke="#ffffff" stroke-width="3"/>
+
+  <g transform="translate(86 92)" filter="url(#shadow)">
+    <ellipse cx="92" cy="252" rx="88" ry="18" fill="#c3c3c3" opacity="0.45"/>
+    <path d="M34 144c12-66 118-67 132 0v101H34z" fill="url(#vest)" stroke="#b74213" stroke-width="4"/>
+    <path d="M73 145c8-36 48-58 86-58 40 0 77 22 85 58v20H73z" fill="#243c95"/>
+    <path d="M103 166h52v78h-52z" fill="#f0b59a"/>
+    <path d="M49 209l48 31 45 5 44-5 47-30v36l-49 13H99l-50-14z" fill="#f2f5f6"/>
+    <circle cx="129" cy="90" r="54" fill="#f0b59a" stroke="#9f5d3f" stroke-width="4"/>
+    <path d="M79 76c8-40 29-58 51-58 31 0 55 19 61 58" fill="url(#helmet)" stroke="#a36f00" stroke-width="4"/>
+    <path d="M72 78h118" stroke="#a36f00" stroke-width="4"/>
+    <path d="M110 101c6 4 11 6 19 6 7 0 13-2 20-6" fill="none" stroke="#2e231f" stroke-width="4" stroke-linecap="round"/>
+    <path d="M104 119c9 10 40 10 50 0" fill="none" stroke="#2e231f" stroke-width="4" stroke-linecap="round"/>
+    <path d="M107 134c12 10 35 10 47 0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    <path d="M149 193l37 26" fill="none" stroke="#f0b59a" stroke-width="20" stroke-linecap="round"/>
+    <path d="M172 203l35 35" fill="none" stroke="#243c95" stroke-width="22" stroke-linecap="round"/>
+    <path d="M180 208l42 40" fill="none" stroke="#f0b59a" stroke-width="16" stroke-linecap="round"/>
+    <path d="M176 240h54" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(924 92)" filter="url(#shadow)">
+    <ellipse cx="92" cy="252" rx="88" ry="18" fill="#c3c3c3" opacity="0.45"/>
+    <path d="M34 144c12-66 118-67 132 0v101H34z" fill="url(#vest)" stroke="#b74213" stroke-width="4"/>
+    <path d="M73 145c8-36 48-58 86-58 40 0 77 22 85 58v20H73z" fill="#243c95"/>
+    <path d="M103 166h52v78h-52z" fill="#b97d61"/>
+    <path d="M49 209l48 31 45 5 44-5 47-30v36l-49 13H99l-50-14z" fill="#f2f5f6"/>
+    <circle cx="129" cy="90" r="54" fill="#b97d61" stroke="#74412c" stroke-width="4"/>
+    <path d="M79 76c8-40 29-58 51-58 31 0 55 19 61 58" fill="url(#helmet)" stroke="#a36f00" stroke-width="4"/>
+    <path d="M72 78h118" stroke="#a36f00" stroke-width="4"/>
+    <path d="M93 96c9-10 24-16 36-16 13 0 27 6 36 16" fill="none" stroke="#4c342a" stroke-width="4"/>
+    <path d="M92 101c8-5 18-8 31-8 14 0 25 3 35 8" fill="none" stroke="#4c342a" stroke-width="3"/>
+    <rect x="94" y="96" width="32" height="20" rx="8" fill="none" stroke="#38444d" stroke-width="3"/>
+    <rect x="132" y="96" width="32" height="20" rx="8" fill="none" stroke="#38444d" stroke-width="3"/>
+    <path d="M126 106h6" stroke="#38444d" stroke-width="3"/>
+    <path d="M105 129c10 9 39 9 49 0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="102" cy="188" r="12" fill="#121212"/>
+    <circle cx="160" cy="188" r="12" fill="#121212"/>
+    <path d="M102 188c11 10 20 14 29 14 8 0 17-4 29-14" fill="none" stroke="#b90f18" stroke-width="9" stroke-linecap="round"/>
+    <path d="M78 190l-30 44" fill="none" stroke="#f2f5f6" stroke-width="18" stroke-linecap="round"/>
+    <path d="M65 221l53 15" fill="none" stroke="#f2f5f6" stroke-width="18" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(600 210)" text-anchor="middle" filter="url(#shadow)">
+    <text x="0" y="-18" font-family="Bahnschrift, Arial, sans-serif" font-size="138" font-weight="800" letter-spacing="3" fill="#29439f">DOIS</text>
+    <text x="0" y="82" font-family="Bahnschrift, Arial, sans-serif" font-size="110" font-weight="900" letter-spacing="2" fill="#f05a1d">IRM&#195;OS</text>
+    <rect x="-248" y="98" width="496" height="44" rx="10" fill="#29439f" opacity="0.94"/>
+    <text x="0" y="129" font-family="Bahnschrift, Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="1.5" fill="#ffffff">MATERIAL DE CONSTRU&#199;&#195;O</text>
+  </g>
+</svg>
