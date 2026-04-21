@@ -545,6 +545,7 @@ def _serialize_quote_rows(rows: list[dict[str, Any]], items_rows: list[dict[str,
     quotes: list[dict[str, Any]] = []
     for row in rows:
         quote = dict(row)
+        quote["customer_name_manual"] = _clean_text(quote.get("customer_name_manual"))
         quote["customer_name"] = quote["customer_name"] or "Cliente não informado"
         quote["validity_date"] = quote.get("validity_date") or quote["quote_date"]
         quote["subtotal_amount"] = round_money(quote.get("subtotal_amount", quote["total_amount"]))

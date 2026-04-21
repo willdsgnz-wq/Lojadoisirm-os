@@ -1970,7 +1970,7 @@ function renderQuotesPage() {
         <div class="section-header">
           <div>
             <h3>${editing ? "Editar orçamento" : "Novo orçamento"}</h3>
-            <p>${editing ? "Atualize a proposta selecionada." : "Monte a proposta com cliente, validade e itens manuais."}</p>
+            <p>${editing ? "Atualize a proposta selecionada." : "Monte a proposta com nome manual ou cliente cadastrado, validade e itens manuais."}</p>
           </div>
         </div>
         <form id="quotes-form" class="form-grid">
@@ -2195,7 +2195,7 @@ function renderChecksPage() {
   return `
     ${renderHero(
       "Controle de cheques emitidos",
-      "Acompanhe pendências, compensações e atrasos com destaque visual e cálculo automático dos dias em atraso.",
+      "Acompanhe pendências, compensações e atrasos com destaque visual, usando a data prevista para filtros e resumos.",
     )}
 
     ${renderPeriodToolbar("checks", {
