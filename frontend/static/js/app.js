@@ -27,6 +27,7 @@ const BRAND_NAME = "MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS"
 const QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"];
 const NOTIFICATION_SESSION_KEY = "doisirmaos.notifications.v1";
 const NOTIFICATION_GREETING_NAME = "Sergio";
+const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})$/;
 
 const pageTitles = {
   dashboard: "Dashboard",
@@ -222,14 +223,52 @@ function canRegisterServiceWorker() {
 }
 
 
+function shouldDisableServiceWorkerCaching() {
+  return (
+    window.location.protocol !== "https:"
+    || DEV_HOST_REGEX.test(window.location.hostname)
+    || window.location.port === "8000"
+  );
+}
+
+
+async function clearBrowserCaches() {
+  if (!("caches" in window)) return;
+  const keys = await window.caches.keys();
+  await Promise.all(keys.map((key) => window.caches.delete(key)));
+}
+
+
+async function unregisterServiceWorkers() {
+  if (!("serviceWorker" in navigator)) return;
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(registrations.map((registration) => registration.unregister()));
+}
+
+
 async function registerPwaSupport() {
   if (!("serviceWorker" in navigator) || !canRegisterServiceWorker()) {
     updateInstallButtonVisibility();
     return;
   }
 
+  if (shouldDisableServiceWorkerCaching()) {
+    try {
+      await unregisterServiceWorkers();
+      await clearBrowserCaches();
+    } catch (error) {
+      console.warn("Não foi possível limpar o cache de desenvolvimento do PWA.", error);
+    } finally {
+      updateInstallButtonVisibility();
+    }
+    return;
+  }
+
   try {
-    const registration = await navigator.serviceWorker.register("/service-worker.js");
+    const registration = await navigator.serviceWorker.register("/service-worker.js", {
+      updateViaCache: "none",
+    });
+    await registration.update();
     if (registration.waiting) {
       registration.waiting.postMessage({ type: "SKIP_WAITING" });
     }

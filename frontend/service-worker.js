@@ -1,16 +1,16 @@
-const CACHE_NAME = "dois-irmaos-static-v1";
+const CACHE_NAME = "dois-irmaos-static-v2";
 const APP_SHELL = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
-  "/assets/css/styles.css",
-  "/assets/js/app.js",
-  "/assets/js/api.js",
-  "/assets/js/helpers.js",
-  "/assets/js/charts.js",
-  "/assets/icons/icon-192.png",
-  "/assets/icons/icon-512.png",
-  "/assets/icons/apple-touch-icon.png",
+  "/static/css/styles.css",
+  "/static/js/app.js",
+  "/static/js/api.js",
+  "/static/js/helpers.js",
+  "/static/js/charts.js",
+  "/static/icons/icon-192.png",
+  "/static/icons/icon-512.png",
+  "/static/icons/apple-touch-icon.png",
 ];
 
 const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})$/;
