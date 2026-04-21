@@ -917,6 +917,32 @@ def delete_check(check_id: int) -> None:
         raise ServiceError("Cheque não encontrado.", 404)
 
 
+def get_today_due_checks_summary() -> dict[str, Any]:
+    today = today_iso()
+
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT amount
+            FROM checks
+            WHERE due_date = ?
+              AND status NOT IN ('Compensado', 'Cancelado')
+            """,
+            (today,),
+        ).fetchall()
+
+    total_amount = round_money(sum(float(row["amount"] or 0) for row in rows))
+    count = len(rows)
+
+    return {
+        "id": f"daily-check-alert-{today}",
+        "date": today,
+        "count": count,
+        "total_amount": total_amount,
+        "has_alert": total_amount > 0,
+    }
+
+
 def get_bootstrap_data() -> dict[str, Any]:
     return {
         "products": list_products(),
@@ -925,6 +951,7 @@ def get_bootstrap_data() -> dict[str, Any]:
         "quotes": list_quotes(),
         "expenses": list_expenses(),
         "checks": list_checks(),
+        "daily_check_alert": get_today_due_checks_summary(),
         "options": {
             "payment_methods": PAYMENT_METHODS,
             "sales_payment_methods": SALES_PAYMENT_METHODS,
@@ -934,6 +961,8 @@ def get_bootstrap_data() -> dict[str, Any]:
             "check_statuses": CHECK_STATUSES,
         },
     }
+
+
 def create_user(data: dict[str, Any]) -> dict[str, Any]:
     username = _require_text(data.get("username"), "username")
     full_name = _clean_text(data.get("full_name"))

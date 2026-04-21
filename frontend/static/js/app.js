@@ -26,6 +26,7 @@ import { renderBadge, renderBarChart, renderEmptyState, renderMetricCard, render
 const BRAND_NAME = "MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS";
 const QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"];
 const NOTIFICATION_SESSION_KEY = "doisirmaos.notifications.v1";
+const TOP_ALERT_SESSION_KEY = "doisirmaos.top-alerts.v1";
 const NOTIFICATION_GREETING_NAME = "Sergio";
 const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})$/;
 
@@ -58,6 +59,7 @@ const state = {
     items: [],
     open: false,
   },
+  topAlert: null,
   data: {
     products: [],
     customers: [],
@@ -119,6 +121,7 @@ const elements = {
   loginForm: document.getElementById("login-form"),
   loginError: document.getElementById("login-error"),
   pageContent: document.getElementById("page-content"),
+  topAlertContainer: document.getElementById("top-alert-container"),
   pageTitle: document.getElementById("page-title"),
   currentUserName: document.getElementById("current-user-name"),
   installAppButton: document.getElementById("install-app-button"),
@@ -164,6 +167,7 @@ function bindGlobalEvents() {
   elements.notificationsButton?.addEventListener("click", handleNotificationsToggle);
   elements.notificationsClearButton?.addEventListener("click", handleClearNotifications);
   elements.notificationsList?.addEventListener("click", handleNotificationListClick);
+  elements.topAlertContainer?.addEventListener("click", handleTopAlertClick);
   elements.openSidebarButton.addEventListener("click", () => toggleSidebar(true));
   elements.closeSidebarButton.addEventListener("click", () => toggleSidebar(false));
   elements.sidebarBackdrop.addEventListener("click", () => toggleSidebar(false));
@@ -193,7 +197,9 @@ function showLogin() {
   elements.appShell.classList.add("hidden");
   state.notifications.items = [];
   state.notifications.open = false;
+  state.topAlert = null;
   renderNotifications();
+  renderTopAlert();
   updateInstallButtonVisibility();
 }
 
@@ -203,6 +209,7 @@ function showApp() {
   elements.appShell.classList.remove("hidden");
   elements.currentUserName.textContent = state.user?.full_name || "Administrador";
   renderNotifications();
+  renderTopAlert();
   updateInstallButtonVisibility();
 }
 
@@ -324,6 +331,99 @@ function writeNotificationSessionState(nextState) {
   } catch {
     // Se o navegador bloquear sessionStorage, o centro de notificações segue funcionando só em memória.
   }
+}
+
+
+function readTopAlertSessionState() {
+  try {
+    const rawValue = window.sessionStorage.getItem(TOP_ALERT_SESSION_KEY);
+    if (!rawValue) {
+      return { dismissedIds: [] };
+    }
+    const parsedValue = JSON.parse(rawValue);
+    return {
+      dismissedIds: Array.isArray(parsedValue?.dismissedIds) ? parsedValue.dismissedIds : [],
+    };
+  } catch {
+    return { dismissedIds: [] };
+  }
+}
+
+
+function writeTopAlertSessionState(nextState) {
+  try {
+    window.sessionStorage.setItem(
+      TOP_ALERT_SESSION_KEY,
+      JSON.stringify({
+        dismissedIds: [...new Set(nextState?.dismissedIds || [])],
+      }),
+    );
+  } catch {
+    // Se o navegador bloquear sessionStorage, o alerta segue funcionando apenas na sessão em memória.
+  }
+}
+
+
+function buildTopAlert() {
+  const alert = state.topAlert;
+  if (!alert?.has_alert || Number(alert.total_amount || 0) <= 0) {
+    return null;
+  }
+
+  const dismissedIds = new Set(readTopAlertSessionState().dismissedIds);
+  if (dismissedIds.has(alert.id)) {
+    return null;
+  }
+
+  return {
+    ...alert,
+    message: `⚠️ Olá ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(alert.total_amount)} de cheque para cair!`,
+  };
+}
+
+
+function renderTopAlert() {
+  if (!elements.topAlertContainer) return;
+
+  const alert = buildTopAlert();
+  elements.topAlertContainer.innerHTML = alert ? `
+    <section class="top-check-alert" data-alert-id="${escapeHtml(alert.id)}" role="status" aria-live="polite">
+      <div class="top-check-alert-copy">
+        <strong>${escapeHtml(alert.message)}</strong>
+        <small>${escapeHtml(`${alert.count} cheque(s) previstos para ${formatDate(alert.date)}.`)}</small>
+      </div>
+      <button
+        type="button"
+        class="top-check-alert-close"
+        data-action="dismiss-top-alert"
+        data-alert-id="${escapeHtml(alert.id)}"
+        aria-label="Fechar alerta"
+      >
+        ×
+      </button>
+    </section>
+  ` : "";
+}
+
+
+function dismissTopAlert(alertId) {
+  if (!alertId) return;
+  const sessionState = readTopAlertSessionState();
+  writeTopAlertSessionState({
+    dismissedIds: [...sessionState.dismissedIds, alertId],
+  });
+  renderTopAlert();
+}
+
+
+function handleTopAlertClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const dismissButton = target.closest('[data-action="dismiss-top-alert"]');
+  if (!dismissButton) return;
+
+  dismissTopAlert(dismissButton.dataset.alertId);
 }
 
 
@@ -546,6 +646,7 @@ async function handleLogout() {
     state.user = null;
     state.notifications.items = [];
     state.notifications.open = false;
+    state.topAlert = null;
     showLogin();
     showToast("Sessão encerrada.", "info");
   }
@@ -555,6 +656,7 @@ async function handleLogout() {
 async function loadData() {
   const payload = await api.bootstrap();
   state.user = payload.user;
+  state.topAlert = payload.daily_check_alert || null;
   state.data = {
     products: payload.products || [],
     customers: payload.customers || [],
@@ -566,6 +668,7 @@ async function loadData() {
   };
   elements.currentUserName.textContent = state.user.full_name;
   refreshNotifications();
+  renderTopAlert();
   renderCurrentPage();
 }
 
