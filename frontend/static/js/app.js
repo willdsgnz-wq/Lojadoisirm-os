@@ -120,6 +120,12 @@ const state = {
     checks: null,
     fiscal: null,
   },
+  quoteComposer: {
+    initializedFor: "",
+    items: [],
+    editingIndex: null,
+    draft: null,
+  },
   filters: {
     dashboard: { preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
     products: { search: "", category: "", active_filter: "active", page: 1 },
@@ -133,7 +139,6 @@ const state = {
     checks: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
     reports: { module: "sales", preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
   },
-  focusField: null,
 };
 
 const searchTimers = new Map();
@@ -216,6 +221,7 @@ function bindGlobalEvents() {
   elements.pageContent.addEventListener("beforeinput", handlePageBeforeInput);
   elements.pageContent.addEventListener("paste", handlePagePaste);
   elements.pageContent.addEventListener("focusin", handlePageFocusIn);
+  elements.pageContent.addEventListener("keydown", handlePageKeyDown);
   elements.pageContent.addEventListener("submit", handlePageSubmit, true);
   elements.pageContent.addEventListener("change", handlePageChange);
   elements.pageContent.addEventListener("input", handlePageInput);
@@ -848,8 +854,7 @@ function setPage(page) {
 }
 
 
-function renderCurrentPage(options = {}) {
-  const { preserveFilterScope = "" } = options;
+function renderCurrentPage() {
   elements.pageTitle.textContent = pageTitles[state.page] || "Sistema";
   document.title = `${BRAND_NAME} | ${pageTitles[state.page] || "Sistema"}`;
   elements.navLinks.forEach((link) => {
@@ -879,27 +884,7 @@ function renderCurrentPage(options = {}) {
   const template = document.createElement("template");
   template.innerHTML = renderMap[state.page]();
 
-  let preservedToolbar = null;
-  if (preserveFilterScope) {
-    const currentToolbar = elements.pageContent.querySelector(`[data-filter-scope="${preserveFilterScope}"]`);
-    const incomingToolbar = template.content.querySelector(`[data-filter-scope="${preserveFilterScope}"]`);
-    if (currentToolbar && incomingToolbar) {
-      const placeholder = document.createElement("div");
-      placeholder.setAttribute("data-preserved-filter-scope", preserveFilterScope);
-      incomingToolbar.replaceWith(placeholder);
-      currentToolbar.remove();
-      preservedToolbar = currentToolbar;
-    }
-  }
-
   elements.pageContent.replaceChildren(template.content);
-
-  if (preservedToolbar) {
-    const placeholder = elements.pageContent.querySelector(`[data-preserved-filter-scope="${preserveFilterScope}"]`);
-    if (placeholder) {
-      placeholder.replaceWith(preservedToolbar);
-    }
-  }
 
   syncMoneyInputs(elements.pageContent);
   const quotesForm = document.getElementById("quotes-form");
@@ -907,25 +892,59 @@ function renderCurrentPage(options = {}) {
   const salesForm = document.getElementById("sales-form");
   if (salesForm) updateSaleTotals(salesForm);
   updateInstallButtonVisibility();
-  restoreFocusField();
+}
+
+function renderFilterResultsScope(scope) {
+  const containers = elements.pageContent.querySelectorAll(`[data-search-results-scope="${scope}"]`);
+  if (!containers.length) {
+    renderCurrentPage();
+    return;
+  }
+
+  containers.forEach((container) => {
+    const part = container.dataset.searchResultsPart || "default";
+    container.innerHTML = getSearchResultsMarkup(scope, part);
+  });
 }
 
 
-function restoreFocusField() {
-  if (!state.focusField) return;
-  const target = elements.pageContent.querySelector(
-    `[data-filter-scope="${state.focusField.scope}"] [name="${state.focusField.name}"]`,
-  );
-  if (target) {
-    target.focus({ preventScroll: true });
-    if (typeof target.setSelectionRange === "function") {
-      const length = target.value.length;
-      const start = Math.min(state.focusField.selectionStart ?? length, length);
-      const end = Math.min(state.focusField.selectionEnd ?? start, length);
-      target.setSelectionRange(start, end);
-    }
-  }
-  state.focusField = null;
+function getSearchResultsMarkup(scope, part = "default") {
+  const searchRenderMap = {
+    products: {
+      default: renderProductsListResults,
+    },
+    stock: {
+      default: renderStockResultsTable,
+    },
+    movements: {
+      default: renderMovementsResultsContent,
+    },
+    customers: {
+      default: renderCustomersListResults,
+    },
+    sales: {
+      metrics: renderSalesMetricsSection,
+      history: renderSalesHistoryPanel,
+    },
+    quotes: {
+      default: renderQuotesListResults,
+    },
+    nfe: {
+      default: renderNfeIssuedResults,
+    },
+    expenses: {
+      insights: renderExpensesInsightsSection,
+      recent: renderExpensesRecentPanel,
+    },
+    checks: {
+      metrics: renderChecksMetricsSection,
+      dashboard: renderChecksDashboardSection,
+      list: renderChecksListPanel,
+    },
+  };
+
+  const renderer = searchRenderMap[scope]?.[part];
+  return renderer ? renderer() : "";
 }
 
 
@@ -1568,59 +1587,193 @@ function renderQuoteUnitOptions(selectedValue = "UN") {
 }
 
 
-function renderQuoteItemRow(item = {}) {
-  const itemName = item.item_name ?? item.product_name ?? "";
-  const unit = item.unit ?? "UN";
-  const quantity = item.quantity ?? 1;
-  const unitPrice = item.unit_price ?? 0;
-  const lineTotal = Number(item.total_price ?? (Number(quantity || 0) * Number(unitPrice || 0)));
+function createQuoteDraftItem(item = {}, options = {}) {
+  const { allowZeroQuantity = false } = options;
+  const itemName = String(item.item_name ?? item.product_name ?? "").trim();
+  const unit = String(item.unit || "UN").trim() || "UN";
+  const quantityValue = Number(item.quantity ?? 1);
+  const unitPriceValue = Number(item.unit_price ?? 0);
+  const quantity = Number.isFinite(quantityValue) && (allowZeroQuantity ? quantityValue >= 0 : quantityValue > 0)
+    ? quantityValue
+    : (allowZeroQuantity ? 0 : 1);
+  const unitPrice = Number.isFinite(unitPriceValue) ? Number(unitPriceValue.toFixed(2)) : 0;
+  const totalPriceValue = Number(item.total_price ?? (quantity * unitPrice));
+  const totalPrice = Number.isFinite(totalPriceValue)
+    ? Number(totalPriceValue.toFixed(2))
+    : Number((quantity * unitPrice).toFixed(2));
+
+  return {
+    item_name: itemName,
+    unit,
+    quantity,
+    unit_price: unitPrice,
+    total_price: totalPrice,
+  };
+}
+
+
+function createQuoteComposer(items = [], initializedFor = "new") {
+  return {
+    initializedFor,
+    items: items.map((item) => createQuoteDraftItem(item)),
+    editingIndex: null,
+    draft: createQuoteDraftItem({ unit: "UN", quantity: 1, unit_price: 0 }),
+  };
+}
+
+
+function getQuoteComposer() {
+  if (!state.quoteComposer?.draft) {
+    state.quoteComposer = createQuoteComposer();
+  }
+  return state.quoteComposer;
+}
+
+
+function syncQuoteComposerState() {
+  const editing = state.editing.quotes;
+  const initializedFor = editing ? `quote:${editing.id}` : "new";
+  if (getQuoteComposer().initializedFor !== initializedFor) {
+    state.quoteComposer = createQuoteComposer(editing?.items || [], initializedFor);
+  }
+  return state.quoteComposer;
+}
+
+
+function resetQuoteComposer() {
+  state.quoteComposer = createQuoteComposer([], "__pending-reset__");
+}
+
+
+function clearQuoteDraft(form = null) {
+  const composer = getQuoteComposer();
+  composer.draft = createQuoteDraftItem({ unit: composer.draft?.unit || "UN", quantity: 1, unit_price: 0 });
+  composer.editingIndex = null;
+
+  if (!form) return;
+
+  const itemNameField = form.querySelector('[name="draft_item_name"]');
+  const unitField = form.querySelector('[name="draft_unit"]');
+  const quantityField = form.querySelector('[name="draft_quantity"]');
+  const unitPriceField = form.querySelector('[name="draft_unit_price"]');
+
+  if (itemNameField) itemNameField.value = "";
+  if (unitField) unitField.value = composer.draft.unit;
+  if (quantityField) quantityField.value = String(composer.draft.quantity);
+  if (unitPriceField) {
+    applyMoneyDigits(unitPriceField, moneyDigitsFromValue(composer.draft.unit_price));
+  }
+}
+
+
+function readQuoteDraftFromForm(form) {
+  const composer = getQuoteComposer();
+  const itemName = form.querySelector('[name="draft_item_name"]')?.value || "";
+  const unit = form.querySelector('[name="draft_unit"]')?.value || "UN";
+  const quantityValue = Number(form.querySelector('[name="draft_quantity"]')?.value || 0);
+  const unitPriceValue = parseMoneyInputValue(form.querySelector('[name="draft_unit_price"]')?.value || 0);
+
+  composer.draft = createQuoteDraftItem({
+    item_name: itemName,
+    unit,
+    quantity: quantityValue,
+    unit_price: unitPriceValue,
+  }, { allowZeroQuantity: true });
+
+  return composer.draft;
+}
+
+
+function renderQuoteDraftEditor() {
+  const composer = getQuoteComposer();
+  const draft = composer.draft || createQuoteDraftItem();
+  const isEditingItem = Number.isInteger(composer.editingIndex);
+  const draftTotal = Number((Number(draft.quantity || 0) * Number(draft.unit_price || 0)).toFixed(2));
 
   return `
-    <div class="item-row quote-item-row">
-      <label class="quote-item-name">
-        <span>Nome do item</span>
-        <input type="text" name="item_name" value="${escapeHtml(toFormValue(itemName))}" placeholder="Ex.: Cimento CP-II 50kg">
-      </label>
-      <label class="quote-item-unit">
-        <span>Unidade</span>
-        <select name="unit">
-          ${renderQuoteUnitOptions(unit)}
-        </select>
-      </label>
-      <label class="quote-item-quantity">
-        <span>Quantidade</span>
-        <input type="number" name="quantity" min="0.01" step="0.01" value="${quantity}">
-      </label>
-      <label class="quote-item-price">
-        <span>Valor unitário</span>
-        ${renderMoneyInput({ name: "unit_price", value: unitPrice, classes: "money-input-compact" })}
-      </label>
-      <div class="line-total-box quote-item-total">
-        <span>Total</span>
-        <strong class="line-total-value">${formatMoney(lineTotal)}</strong>
+    <div class="quote-entry-form-card">
+      <div class="quote-entry-form-grid">
+        <label class="quote-entry-name">
+          <span>Nome do item</span>
+          <input type="text" name="draft_item_name" value="${escapeHtml(toFormValue(draft.item_name))}" placeholder="Ex.: Cimento CP-II 50kg">
+        </label>
+        <label class="quote-entry-unit">
+          <span>Unidade</span>
+          <select name="draft_unit">
+            ${renderQuoteUnitOptions(draft.unit || "UN")}
+          </select>
+        </label>
+        <label class="quote-entry-quantity">
+          <span>Quantidade</span>
+          <input type="number" name="draft_quantity" min="0.01" step="0.01" value="${escapeHtml(String(draft.quantity || 1))}">
+        </label>
+        <label class="quote-entry-price">
+          <span>Valor unitário</span>
+          ${renderMoneyInput({ name: "draft_unit_price", value: draft.unit_price ?? 0, classes: "money-input-compact" })}
+        </label>
+        <div class="line-total-box quote-entry-total-box">
+          <span>Total do item</span>
+          <strong data-quote-draft-total>${formatMoney(draftTotal)}</strong>
+        </div>
       </div>
-      <button type="button" class="table-action danger line-remove-button quote-item-remove" data-action="remove-quote-item">Remover</button>
+      <div class="quote-entry-actions">
+        <button type="button" class="btn btn-primary" data-action="save-quote-item">${isEditingItem ? "Salvar alteração" : "Adicionar item"}</button>
+        ${isEditingItem ? '<button type="button" class="btn btn-secondary" data-action="cancel-quote-item-edit">Cancelar edição</button>' : ""}
+      </div>
     </div>
   `;
 }
 
 
-function getQuoteItems(form) {
-  return [...form.querySelectorAll(".item-row")].map((row) => {
-    const itemName = row.querySelector('[name="item_name"]').value;
-    const unit = row.querySelector('[name="unit"]').value;
-    const quantity = row.querySelector('[name="quantity"]').value;
-    const unitPrice = row.querySelector('[name="unit_price"]').value;
-    const numericUnitPrice = parseMoneyInputValue(unitPrice);
-    const totalPrice = Number(quantity || 0) * numericUnitPrice;
-    return {
-      item_name: itemName.trim(),
-      unit,
-      quantity: Number(quantity),
-      unit_price: Number(numericUnitPrice.toFixed(2)),
-      total_price: Number(totalPrice.toFixed(2)),
-    };
-  }).filter((item) => item.item_name || item.quantity > 0 || item.unit_price > 0);
+function renderQuoteItemsList() {
+  const composer = getQuoteComposer();
+
+  return composer.items.length ? `
+    <div class="table-wrapper quote-items-table-wrapper">
+      <table class="data-table quote-items-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Unidade</th>
+            <th>Quantidade</th>
+            <th>Valor unitário</th>
+            <th>Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${composer.items.map((item, index) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(item.item_name)}</strong>
+                <small>Item ${index + 1}</small>
+              </td>
+              <td>${escapeHtml(item.unit || "UN")}</td>
+              <td>${formatNumber(item.quantity)}</td>
+              <td>${formatMoney(item.unit_price)}</td>
+              <td>${formatMoney(item.total_price)}</td>
+              <td>
+                <div class="table-actions">
+                  <button type="button" class="table-action" data-action="edit-quote-item" data-index="${index}">Editar</button>
+                  <button type="button" class="table-action danger" data-action="remove-quote-item" data-index="${index}">Remover</button>
+                </div>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : `
+    <div class="quote-items-empty">
+      <strong>Nenhum item adicionado ainda</strong>
+      <p>Use o formulário acima para lançar os itens do orçamento e montar a lista rapidamente.</p>
+    </div>
+  `;
+}
+
+
+function getQuoteItems() {
+  return getQuoteComposer().items.map((item) => createQuoteDraftItem(item));
 }
 
 
@@ -1633,18 +1786,15 @@ function getQuoteTotals(items, discountAmount = 0) {
 
 
 function updateQuoteTotals(form) {
-  const rows = [...form.querySelectorAll(".item-row")];
-  const items = [];
-  rows.forEach((row) => {
-    const quantity = Number(row.querySelector('[name="quantity"]').value || 0);
-    const unitPrice = parseMoneyInputValue(row.querySelector('[name="unit_price"]').value || 0);
-    const lineTotal = quantity * unitPrice;
-    items.push({ total_price: lineTotal });
-    row.querySelector(".line-total-value").textContent = formatMoney(lineTotal);
-  });
+  const items = getQuoteItems();
   const discountField = form.querySelector('[name="discount_amount"]');
   const discountValue = parseMoneyInputValue(discountField?.value || 0);
   const totals = getQuoteTotals(items, discountValue);
+  const draft = readQuoteDraftFromForm(form);
+  const draftTotalElement = form.querySelector("[data-quote-draft-total]");
+  if (draftTotalElement) {
+    draftTotalElement.textContent = formatMoney(Number(draft.quantity || 0) * Number(draft.unit_price || 0));
+  }
 
   const subtotalElement = form.querySelector("[data-quote-subtotal]");
   const discountElement = form.querySelector("[data-quote-discount]");
@@ -1655,12 +1805,133 @@ function updateQuoteTotals(form) {
 }
 
 
-function mountQuoteItem(form, item = {}) {
-  const container = form.querySelector("[data-items-container]");
-  if (!container) return;
-  container.insertAdjacentHTML("beforeend", renderQuoteItemRow(item));
-  syncMoneyInputs(form);
+function updateQuoteItemEditorState(form) {
+  const composer = getQuoteComposer();
+  const primaryButton = form.querySelector('[data-action="save-quote-item"]');
+  const secondaryButton = form.querySelector('[data-action="cancel-quote-item-edit"]');
+
+  if (primaryButton) {
+    primaryButton.textContent = Number.isInteger(composer.editingIndex) ? "Salvar alteração" : "Adicionar item";
+  }
+
+  if (Number.isInteger(composer.editingIndex)) {
+    if (!secondaryButton) {
+      const actions = form.querySelector(".quote-entry-actions");
+      if (actions) {
+        actions.insertAdjacentHTML(
+          "beforeend",
+          '<button type="button" class="btn btn-secondary" data-action="cancel-quote-item-edit">Cancelar edição</button>',
+        );
+      }
+    }
+  } else if (secondaryButton) {
+    secondaryButton.remove();
+  }
+}
+
+
+function renderQuoteItemsSection(form) {
+  const listContainer = form.querySelector("[data-quote-items-list]");
+  if (listContainer) {
+    listContainer.innerHTML = renderQuoteItemsList();
+  }
+
+  updateQuoteItemEditorState(form);
   updateQuoteTotals(form);
+}
+
+
+function focusQuoteItemName(form) {
+  const itemNameField = form.querySelector('[name="draft_item_name"]');
+  if (itemNameField instanceof HTMLInputElement) {
+    itemNameField.focus({ preventScroll: true });
+    itemNameField.select();
+  }
+}
+
+
+function handleSaveQuoteItem(form) {
+  const composer = getQuoteComposer();
+  const draft = readQuoteDraftFromForm(form);
+
+  try {
+    if (!draft.item_name) {
+      throw new Error("Informe o nome do item antes de adicionar ao orçamento.");
+    }
+    if (!isValidNumber(draft.quantity, { min: 0.01, allowZero: false })) {
+      throw new Error("Informe uma quantidade válida para o item do orçamento.");
+    }
+    if (!isValidNumber(draft.unit_price, { min: 0, allowZero: true })) {
+      throw new Error("Informe um valor unitário válido para o item do orçamento.");
+    }
+  } catch (error) {
+    updateFormFeedback("quotes", form, error.message, "error");
+    showToast(error.message, "error");
+    return;
+  }
+
+  const nextItem = createQuoteDraftItem(draft);
+  if (Number.isInteger(composer.editingIndex)) {
+    composer.items[composer.editingIndex] = nextItem;
+  } else {
+    composer.items.push(nextItem);
+  }
+
+  clearFormFeedback("quotes", form);
+  clearQuoteDraft(form);
+  renderQuoteItemsSection(form);
+  focusQuoteItemName(form);
+}
+
+
+function handleEditQuoteItem(form, index) {
+  const composer = getQuoteComposer();
+  const item = composer.items[index];
+  if (!item) return;
+
+  composer.editingIndex = index;
+  composer.draft = createQuoteDraftItem(item);
+
+  const itemNameField = form.querySelector('[name="draft_item_name"]');
+  const unitField = form.querySelector('[name="draft_unit"]');
+  const quantityField = form.querySelector('[name="draft_quantity"]');
+  const unitPriceField = form.querySelector('[name="draft_unit_price"]');
+
+  if (itemNameField) itemNameField.value = composer.draft.item_name;
+  if (unitField) unitField.value = composer.draft.unit;
+  if (quantityField) quantityField.value = String(composer.draft.quantity);
+  if (unitPriceField) {
+    applyMoneyDigits(unitPriceField, moneyDigitsFromValue(composer.draft.unit_price));
+  }
+
+  clearFormFeedback("quotes", form);
+  renderQuoteItemsSection(form);
+  focusQuoteItemName(form);
+}
+
+
+function handleRemoveQuoteItem(form, index) {
+  const composer = getQuoteComposer();
+  if (!composer.items[index]) return;
+
+  composer.items.splice(index, 1);
+
+  if (composer.editingIndex === index) {
+    clearQuoteDraft(form);
+  } else if (Number.isInteger(composer.editingIndex) && composer.editingIndex > index) {
+    composer.editingIndex -= 1;
+  }
+
+  clearFormFeedback("quotes", form);
+  renderQuoteItemsSection(form);
+}
+
+
+function handleCancelQuoteItemEdit(form) {
+  clearQuoteDraft(form);
+  clearFormFeedback("quotes", form);
+  renderQuoteItemsSection(form);
+  focusQuoteItemName(form);
 }
 
 
@@ -2031,12 +2302,12 @@ function renderDashboardPage() {
 }
 
 
-function renderProductsPage() {
+function getFilteredProductsBase() {
   const search = state.filters.products.search;
   const categoryFilter = state.filters.products.category;
   const activeFilter = state.filters.products.active_filter || "active";
-  const editing = state.editing.products;
-  const baseProducts = getSimpleSearchRecords(
+
+  return getSimpleSearchRecords(
     state.data.products,
     ["name", "sku", "code", "category", "description", "ncm"],
     search,
@@ -2046,9 +2317,597 @@ function renderProductsPage() {
     if (activeFilter === "inactive") return product.active === false;
     return true;
   });
-  const categories = [...new Set(state.data.products.map((product) => product.category).filter(Boolean))].sort();
-  const pagination = paginateRecords(baseProducts, state.filters.products.page, PRODUCTS_PER_PAGE);
+}
+
+
+function renderProductsListResults() {
+  const pagination = paginateRecords(getFilteredProductsBase(), state.filters.products.page, PRODUCTS_PER_PAGE);
   const products = pagination.items;
+
+  return products.length ? `
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Produto</th>
+            <th>Categoria</th>
+            <th>NCM</th>
+            <th>Estoque</th>
+            <th>Mínimo</th>
+            <th>Venda</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${products.map((product) => `
+            <tr class="${product.low_stock ? "row-danger" : ""}">
+              <td>${escapeHtml(product.sku || product.code)}</td>
+              <td>
+                <strong>${escapeHtml(product.name)}</strong>
+                <small>${escapeHtml(`${product.unit} | CFOP ${product.cfop_default || "-"}`)}</small>
+              </td>
+              <td>${escapeHtml(product.category)}</td>
+              <td>${escapeHtml(product.ncm || "-")}</td>
+              <td>${formatNumber(product.stock_quantity)}</td>
+              <td>${formatNumber(product.min_stock)}</td>
+              <td>${formatMoney(product.sale_price)}</td>
+              <td>
+                ${product.active === false
+                  ? renderBadge("Inativo", "neutral")
+                  : (product.low_stock ? renderBadge("Estoque baixo", "danger") : renderBadge("Ativo", "success"))}
+              </td>
+              <td>${renderTableActions("product", product.id)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div class="table-pagination">
+      <button type="button" class="btn btn-secondary" data-action="products-prev-page" ${pagination.page <= 1 ? "disabled" : ""}>Anterior</button>
+      <span>Página ${pagination.page} de ${pagination.totalPages} • ${pagination.totalItems} produto(s)</span>
+      <button type="button" class="btn btn-secondary" data-action="products-next-page" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Próxima</button>
+    </div>
+  ` : renderEmptyState("Nenhum produto encontrado", "Tente outro termo de busca ou cadastre um novo produto.");
+}
+
+
+function getFilteredStockProducts() {
+  const filter = state.filters.stock;
+  return getSimpleSearchRecords(getActiveProducts(), ["name", "sku", "category", "ncm"], filter.search)
+    .filter((product) => {
+      if (filter.stock_filter === "low") return product.low_stock;
+      if (filter.stock_filter === "empty") return product.out_of_stock;
+      return true;
+    });
+}
+
+
+function renderStockResultsTable() {
+  const products = getFilteredStockProducts();
+
+  return products.length ? `
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Produto</th>
+            <th>Categoria</th>
+            <th>Atual</th>
+            <th>Mínimo</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${products.map((product) => `
+            <tr class="${product.low_stock ? "row-danger" : ""}">
+              <td>${escapeHtml(product.sku || product.code)}</td>
+              <td>
+                <strong>${escapeHtml(product.name)}</strong>
+                <small>${escapeHtml(`${product.unit} • NCM ${product.ncm || "-"}`)}</small>
+              </td>
+              <td>${escapeHtml(product.category)}</td>
+              <td>${formatNumber(product.stock_quantity)}</td>
+              <td>${formatNumber(product.min_stock)}</td>
+              <td>${product.out_of_stock ? renderBadge("Sem estoque", "warning") : (product.low_stock ? renderBadge("Baixo", "danger") : renderBadge("OK", "success"))}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : renderEmptyState("Nenhum produto encontrado", "Ajuste a busca ou o filtro do saldo atual.");
+}
+
+
+function getFilteredMovementsData() {
+  const filter = state.filters.movements;
+  const period = getPeriod("movements");
+  let movements = filterByPeriod(state.data.stock_movements, "movement_date", period);
+  movements = getSimpleSearchRecords(movements, ["product_name", "product_sku", "reason", "document_reference"], filter.search);
+  if (filter.movement_type) {
+    movements = movements.filter((item) => item.movement_type === filter.movement_type);
+  }
+
+  return {
+    period,
+    movements,
+    chartData: groupByDay(movements, "movement_date", (item) => Math.abs(Number(item.quantity || 0)), 7),
+  };
+}
+
+
+function renderMovementsResultsContent() {
+  const { period, movements, chartData } = getFilteredMovementsData();
+
+  return `
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Movimentações", value: formatNumber(movements.length), helper: period.label })}
+      ${renderMetricCard({ label: "Entradas", value: formatNumber(movements.filter((item) => item.movement_type === "ENTRADA").length), helper: "Reposições e estornos", tone: "success" })}
+      ${renderMetricCard({ label: "Saídas", value: formatNumber(movements.filter((item) => item.movement_type === "SAIDA").length), helper: "Baixas e vendas", tone: "warning" })}
+      ${renderMetricCard({ label: "Ajustes", value: formatNumber(movements.filter((item) => item.movement_type === "AJUSTE").length), helper: "Inventário", tone: "brand" })}
+    </section>
+
+    <section class="dashboard-grid">
+      ${renderBarChart({ title: "Quantidade movimentada por dia", subtitle: "Últimos 7 dias do filtro", data: chartData, format: "count" })}
+    </section>
+
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <h3>Histórico de movimentações</h3>
+          <p>${period.label}</p>
+        </div>
+      </div>
+      ${movements.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Produto</th>
+                <th>Tipo</th>
+                <th>Quantidade</th>
+                <th>Antes</th>
+                <th>Depois</th>
+                <th>Documento</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${movements.map((movement) => `
+                <tr>
+                  <td>${formatDate(movement.movement_date)}</td>
+                  <td>
+                    <strong>${escapeHtml(movement.product_name)}</strong>
+                    <small>${escapeHtml(movement.product_sku)}</small>
+                  </td>
+                  <td>${renderBadge(movement.movement_type, statusTone(movement.movement_type))}</td>
+                  <td>${formatNumber(movement.quantity)}</td>
+                  <td>${formatNumber(movement.balance_before)}</td>
+                  <td>${formatNumber(movement.balance_after)}</td>
+                  <td>${escapeHtml(movement.document_reference || "-")}</td>
+                  <td>${escapeHtml(movement.reason || "-")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Sem movimentações no período", "Cadastre entradas, saídas ou ajustes para montar o histórico.")}
+    </section>
+  `;
+}
+
+
+function getFilteredIssuedRecords() {
+  return getSimpleSearchRecords(
+    state.data.nfe_issued || [],
+    ["customer_name", "access_key", "number_nfe", "status_nfe", "payment_method", "source_type"],
+    state.filters.nfe.search,
+  );
+}
+
+
+function renderNfeIssuedResults() {
+  const filteredIssued = getFilteredIssuedRecords();
+
+  return filteredIssued.length ? `
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Número</th>
+            <th>Série</th>
+            <th>Origem</th>
+            <th>Cliente</th>
+            <th>Status</th>
+            <th>Data</th>
+            <th>Total</th>
+            <th>Arquivos</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filteredIssued.map((record) => `
+            <tr>
+              <td>${escapeHtml(String(record.number_nfe))}</td>
+              <td>${escapeHtml(String(record.series_nfe))}</td>
+              <td>${renderBadge(record.source_type === "manual" ? "Manual" : "Venda", record.source_type === "manual" ? "brand" : "neutral")}</td>
+              <td>${escapeHtml(record.customer_name || "-")}</td>
+              <td>${renderBadge(record.status_nfe, statusTone(record.status_nfe))}</td>
+              <td>${escapeHtml(record.authorization_date ? record.authorization_date.slice(0, 10) : "-")}</td>
+              <td>${formatMoney(record.total_amount)}</td>
+              <td>
+                <div class="table-actions">
+                  <button type="button" class="table-action" data-action="download-nfe-xml" data-id="${record.id}">XML</button>
+                  <button type="button" class="table-action" data-action="download-nfe-pdf" data-id="${record.id}">PDF</button>
+                </div>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : renderEmptyState("Nenhuma NF-e encontrada", "Ajuste a busca ou emita uma nova NF-e pela página dedicada.");
+}
+
+
+function getFilteredCustomers() {
+  return getSimpleSearchRecords(state.data.customers, ["name", "phone", "document", "address", "notes"], state.filters.customers.search);
+}
+
+
+function renderCustomersListResults() {
+  const customers = getFilteredCustomers();
+
+  return customers.length ? `
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Telefone</th>
+            <th>CPF/CNPJ</th>
+            <th>Endereço</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${customers.map((customer) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(customer.name)}</strong>
+                <small>${escapeHtml(customer.notes || "Sem observações")}</small>
+              </td>
+              <td>${escapeHtml(customer.phone || "-")}</td>
+              <td>${escapeHtml(customer.document || "-")}</td>
+              <td>${escapeHtml(customer.address || "-")}</td>
+              <td>${renderTableActions("customer", customer.id)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : renderEmptyState("Nenhum cliente encontrado", "Tente outro termo ou cadastre um novo cliente.");
+}
+
+
+function getFilteredSalesData() {
+  const period = getPeriod("sales");
+  const periodSales = filterByPeriod(state.data.sales, "sale_date", period);
+  const sales = getSimpleSearchRecords(periodSales, ["payment_method", "notes", "period", "sale_time"], state.filters.sales.search);
+
+  return {
+    period,
+    sales,
+    shiftSummary: getSalesShiftSummary(sales),
+  };
+}
+
+
+function renderSalesMetricsSection() {
+  const { period, shiftSummary } = getFilteredSalesData();
+
+  return `
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Vendas da manhã", value: formatMoney(shiftSummary.totalMorning), helper: `${shiftSummary.countMorning} venda(s)`, tone: "brand" })}
+      ${renderMetricCard({ label: "Vendas da tarde", value: formatMoney(shiftSummary.totalAfternoon), helper: `${shiftSummary.countAfternoon} venda(s)` })}
+      ${renderMetricCard({ label: "Total do período", value: formatMoney(shiftSummary.total), helper: period.label, tone: "success" })}
+      ${renderMetricCard({ label: "Quantidade total", value: formatNumber(shiftSummary.count), helper: "Histórico filtrado" })}
+    </section>
+  `;
+}
+
+
+function renderSalesHistoryPanel() {
+  const { period, sales } = getFilteredSalesData();
+
+  return `
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>Histórico de vendas</h3>
+          <p>${period.label}</p>
+        </div>
+      </div>
+      ${sales.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Hora</th>
+                <th>Período</th>
+                <th>Pagamento</th>
+                <th>Total</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sales.map((sale) => `
+                <tr>
+                  <td>${formatDate(sale.sale_date)}</td>
+                  <td>${escapeHtml(sale.sale_time || "-")}</td>
+                  <td>${renderBadge(resolveSalePeriod(sale), statusTone(resolveSalePeriod(sale)))}</td>
+                  <td>${escapeHtml(sale.payment_method)}</td>
+                  <td>${formatMoney(sale.total_amount)}</td>
+                  <td>${renderTableActions("sale", sale.id)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Nenhuma venda encontrada", "Cadastre vendas ou altere o período do filtro.")}
+    </article>
+  `;
+}
+
+
+function getFilteredQuotes() {
+  const search = state.filters.quotes.search;
+  const status = state.filters.quotes.status;
+  let quotes = [...state.data.quotes];
+  if (search) {
+    const normalizedSearch = search.toLowerCase();
+    quotes = quotes.filter((quote) => [
+      quote.customer_name,
+      quote.status,
+      quote.notes,
+      quote.validity_date,
+      summarizeQuoteItems(quote),
+    ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch)));
+  }
+  if (status) {
+    quotes = quotes.filter((quote) => quote.status === status);
+  }
+  return quotes;
+}
+
+
+function renderQuotesListResults() {
+  const quotes = getFilteredQuotes();
+
+  return quotes.length ? `
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Validade</th>
+            <th>Cliente</th>
+            <th>Status</th>
+            <th>Total</th>
+            <th>Itens</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${quotes.map((quote) => `
+            <tr>
+              <td>${formatDate(quote.quote_date)}</td>
+              <td>${formatDate(quote.validity_date || quote.quote_date)}</td>
+              <td>${escapeHtml(quote.customer_name)}</td>
+              <td>${renderBadge(quote.status, statusTone(quote.status))}</td>
+              <td>${formatMoney(quote.total_amount)}</td>
+              <td><small>${escapeHtml(summarizeQuoteItems(quote) || "Sem itens")}</small></td>
+              <td>${renderQuoteTableActions(quote.id)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : renderEmptyState("Nenhum orçamento encontrado", "Cadastre um novo orçamento ou altere a busca.");
+}
+
+
+function getFilteredExpensesData() {
+  const period = getPeriod("expenses");
+  const filteredExpenses = getSimpleSearchRecords(
+    filterByPeriod(state.data.expenses, "payment_date", period),
+    ["description", "category", "payment_method", "supplier", "notes"],
+    state.filters.expenses.search,
+  );
+
+  return {
+    period,
+    filteredExpenses,
+    byCategory: getCategoryTotals(filteredExpenses, "category", "amount"),
+    byPayment: getPaymentTotals(filteredExpenses, "payment_method", "amount"),
+    recentExpenses: sortByDateDesc(filteredExpenses, "payment_date").slice(0, 6),
+  };
+}
+
+
+function renderExpensesInsightsSection() {
+  const { period, byCategory, byPayment } = getFilteredExpensesData();
+
+  return `
+    <section class="dashboard-grid">
+      ${renderBarChart({ title: "Despesas por dia", subtitle: "Últimos 7 dias", data: groupByDay(state.data.expenses, "payment_date", (expense) => expense.amount, 7) })}
+      ${renderBarChart({ title: "Despesas por mês", subtitle: "Últimos 6 meses", data: groupByMonth(state.data.expenses, "payment_date", (expense) => expense.amount, 6) })}
+      ${renderStatList({ title: "Totais por categoria", subtitle: period.label, rows: byCategory })}
+      ${renderStatList({ title: "Totais por pagamento", subtitle: period.label, rows: byPayment })}
+    </section>
+  `;
+}
+
+
+function renderExpensesRecentPanel() {
+  const { period, recentExpenses } = getFilteredExpensesData();
+
+  return `
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>Últimos lançamentos</h3>
+          <p>${period.label}</p>
+        </div>
+      </div>
+      ${recentExpenses.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Pagamento</th>
+                <th>Valor</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${recentExpenses.map((expense) => `
+                <tr>
+                  <td>${formatDate(expense.payment_date)}</td>
+                  <td>
+                    <strong>${escapeHtml(expense.description)}</strong>
+                    <small>${escapeHtml(expense.supplier || "-")}</small>
+                  </td>
+                  <td>${escapeHtml(expense.category)}</td>
+                  <td>${escapeHtml(expense.payment_method)}</td>
+                  <td>${formatMoney(expense.amount)}</td>
+                  <td>${renderTableActions("expense", expense.id)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Nenhuma conta paga encontrada", "Cadastre uma nova despesa ou ajuste o filtro.")}
+    </article>
+  `;
+}
+
+
+function getFilteredChecksData() {
+  const period = getPeriod("checks");
+  const checksInPeriod = filterByPeriod(state.data.checks, "due_date", period);
+  let filteredChecks = [...checksInPeriod];
+  filteredChecks = getSimpleSearchRecords(filteredChecks, ["check_number", "beneficiary", "notes"], state.filters.checks.search);
+  if (state.filters.checks.status) {
+    filteredChecks = filteredChecks.filter((check) => check.effective_status === state.filters.checks.status || check.status === state.filters.checks.status);
+  }
+
+  return {
+    period,
+    checksInPeriod,
+    filteredChecks,
+    pendingChecks: checksInPeriod.filter((check) => check.effective_status === "Pendente"),
+    compensatedChecks: checksInPeriod.filter((check) => check.effective_status === "Compensado"),
+    overdueChecks: checksInPeriod.filter((check) => check.effective_status === "Atrasado"),
+  };
+}
+
+
+function renderChecksMetricsSection() {
+  const { filteredChecks, pendingChecks, compensatedChecks, overdueChecks } = getFilteredChecksData();
+
+  return `
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Cheques pendentes", value: formatMoney(sumBy(pendingChecks, (check) => check.amount)), helper: `${pendingChecks.length} registro(s)`, tone: "warning" })}
+      ${renderMetricCard({ label: "Cheques compensados", value: formatMoney(sumBy(compensatedChecks, (check) => check.amount)), helper: `${compensatedChecks.length} registro(s)`, tone: "success" })}
+      ${renderMetricCard({ label: "Cheques atrasados", value: formatMoney(sumBy(overdueChecks, (check) => check.amount)), helper: `${overdueChecks.length} registro(s)`, tone: overdueChecks.length ? "danger" : "success" })}
+      ${renderMetricCard({ label: "No filtro", value: formatMoney(sumBy(filteredChecks, (check) => check.amount)), helper: `${filteredChecks.length} registro(s)` })}
+    </section>
+  `;
+}
+
+
+function renderChecksDashboardSection() {
+  const { period, checksInPeriod, overdueChecks } = getFilteredChecksData();
+
+  return `
+    <section class="dashboard-grid">
+      ${renderBarChart({ title: "Cheques por semana", subtitle: "Agrupado pela data prevista", data: groupByWeek(checksInPeriod, "due_date", (check) => check.amount, 8) })}
+      ${renderBarChart({ title: "Cheques por mês", subtitle: "Agrupado pela data prevista", data: groupByMonth(checksInPeriod, "due_date", (check) => check.amount, 6) })}
+      ${renderStatList({ title: "Quantidade por status", subtitle: period.label, rows: getStatusTotals(checksInPeriod, "effective_status", "amount"), money: true })}
+      ${renderStatList({
+        title: "Cheques atrasados",
+        subtitle: "Lista de atenção imediata",
+        rows: overdueChecks.map((check) => ({ label: `${check.check_number} - ${check.beneficiary}`, value: check.amount, helper: `${check.days_overdue} dia(s) de atraso` })),
+      })}
+    </section>
+  `;
+}
+
+
+function renderChecksListPanel() {
+  const { filteredChecks } = getFilteredChecksData();
+
+  return `
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>Lista de cheques</h3>
+          <p>Filtro aplicado pela data prevista.</p>
+        </div>
+      </div>
+      ${filteredChecks.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>Beneficiário</th>
+                <th>Valor</th>
+                <th>Emissão</th>
+                <th>Previsto</th>
+                <th>Status</th>
+                <th>Dias</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredChecks.map((check) => `
+                <tr class="${check.is_overdue ? "row-danger" : ""}">
+                  <td>${escapeHtml(check.check_number)}</td>
+                  <td>${escapeHtml(check.beneficiary)}</td>
+                  <td>${formatMoney(check.amount)}</td>
+                  <td>${formatDate(check.issue_date)}</td>
+                  <td>${formatDate(check.due_date)}</td>
+                  <td>${renderBadge(check.effective_status, statusTone(check.effective_status))}</td>
+                  <td>
+                    <small>Pendente: ${formatNumber(check.days_pending)}</small><br>
+                    <small>Atraso: ${formatNumber(check.days_overdue)}</small>
+                  </td>
+                  <td>${renderTableActions("check", check.id)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Nenhum cheque encontrado", "Cadastre um cheque ou ajuste o período e o status.")}
+    </article>
+  `;
+}
+
+
+function renderProductsPage() {
+  const search = state.filters.products.search;
+  const categoryFilter = state.filters.products.category;
+  const activeFilter = state.filters.products.active_filter || "active";
+  const editing = state.editing.products;
+  const categories = [...new Set(state.data.products.map((product) => product.category).filter(Boolean))].sort();
   const activeProducts = getActiveProducts();
   const totalSaleValue = sumBy(activeProducts, (product) => product.stock_quantity * product.sale_price);
 
@@ -2154,53 +3013,7 @@ function renderProductsPage() {
             </div>
           </div>
         </section>
-
-        ${products.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Produto</th>
-                  <th>Categoria</th>
-                  <th>NCM</th>
-                  <th>Estoque</th>
-                  <th>Mínimo</th>
-                  <th>Venda</th>
-                  <th>Status</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${products.map((product) => `
-                  <tr class="${product.low_stock ? "row-danger" : ""}">
-                    <td>${escapeHtml(product.sku || product.code)}</td>
-                    <td>
-                      <strong>${escapeHtml(product.name)}</strong>
-                      <small>${escapeHtml(`${product.unit} | CFOP ${product.cfop_default || "-"}`)}</small>
-                    </td>
-                    <td>${escapeHtml(product.category)}</td>
-                    <td>${escapeHtml(product.ncm || "-")}</td>
-                    <td>${formatNumber(product.stock_quantity)}</td>
-                    <td>${formatNumber(product.min_stock)}</td>
-                    <td>${formatMoney(product.sale_price)}</td>
-                    <td>
-                      ${product.active === false
-                        ? renderBadge("Inativo", "neutral")
-                        : (product.low_stock ? renderBadge("Estoque baixo", "danger") : renderBadge("Ativo", "success"))}
-                    </td>
-                    <td>${renderTableActions("product", product.id)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-          <div class="table-pagination">
-            <button type="button" class="btn btn-secondary" data-action="products-prev-page" ${pagination.page <= 1 ? "disabled" : ""}>Anterior</button>
-            <span>Página ${pagination.page} de ${pagination.totalPages} • ${pagination.totalItems} produto(s)</span>
-            <button type="button" class="btn btn-secondary" data-action="products-next-page" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Próxima</button>
-          </div>
-        ` : renderEmptyState("Nenhum produto encontrado", "Tente outro termo de busca ou cadastre um novo produto.")}
+        <div data-search-results-scope="products">${renderProductsListResults()}</div>
       </article>
     </section>
   `;
@@ -2210,12 +3023,6 @@ function renderProductsPage() {
 function renderStockPage() {
   const overview = state.data.stock_overview || {};
   const filter = state.filters.stock;
-  const products = getSimpleSearchRecords(getActiveProducts(), ["name", "sku", "category", "ncm"], filter.search)
-    .filter((product) => {
-      if (filter.stock_filter === "low") return product.low_stock;
-      if (filter.stock_filter === "empty") return product.out_of_stock;
-      return true;
-    });
 
   return `
     ${renderHero(
@@ -2279,38 +3086,7 @@ function renderStockPage() {
             </label>
           </div>
         </section>
-
-        ${products.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>SKU</th>
-                  <th>Produto</th>
-                  <th>Categoria</th>
-                  <th>Atual</th>
-                  <th>Mínimo</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${products.map((product) => `
-                  <tr class="${product.low_stock ? "row-danger" : ""}">
-                    <td>${escapeHtml(product.sku || product.code)}</td>
-                    <td>
-                      <strong>${escapeHtml(product.name)}</strong>
-                      <small>${escapeHtml(`${product.unit} • NCM ${product.ncm || "-"}`)}</small>
-                    </td>
-                    <td>${escapeHtml(product.category)}</td>
-                    <td>${formatNumber(product.stock_quantity)}</td>
-                    <td>${formatNumber(product.min_stock)}</td>
-                    <td>${product.out_of_stock ? renderBadge("Sem estoque", "warning") : (product.low_stock ? renderBadge("Baixo", "danger") : renderBadge("OK", "success"))}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Nenhum produto encontrado", "Ajuste a busca ou o filtro do saldo atual.")}
+        <div data-search-results-scope="stock">${renderStockResultsTable()}</div>
       </article>
     </section>
   `;
@@ -2319,14 +3095,6 @@ function renderStockPage() {
 
 function renderMovementsPage() {
   const filter = state.filters.movements;
-  const period = getPeriod("movements");
-  let movements = filterByPeriod(state.data.stock_movements, "movement_date", period);
-  movements = getSimpleSearchRecords(movements, ["product_name", "product_sku", "reason", "document_reference"], filter.search);
-  if (filter.movement_type) {
-    movements = movements.filter((item) => item.movement_type === filter.movement_type);
-  }
-
-  const chartData = groupByDay(movements, "movement_date", (item) => Math.abs(Number(item.quantity || 0)), 7);
 
   return `
     ${renderHero(
@@ -2350,61 +3118,7 @@ function renderMovementsPage() {
         </label>
       </div>
     </section>
-
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Movimentações", value: formatNumber(movements.length), helper: period.label })}
-      ${renderMetricCard({ label: "Entradas", value: formatNumber(movements.filter((item) => item.movement_type === "ENTRADA").length), helper: "Reposições e estornos", tone: "success" })}
-      ${renderMetricCard({ label: "Saídas", value: formatNumber(movements.filter((item) => item.movement_type === "SAIDA").length), helper: "Baixas e vendas", tone: "warning" })}
-      ${renderMetricCard({ label: "Ajustes", value: formatNumber(movements.filter((item) => item.movement_type === "AJUSTE").length), helper: "Inventário", tone: "brand" })}
-    </section>
-
-    <section class="dashboard-grid">
-      ${renderBarChart({ title: "Quantidade movimentada por dia", subtitle: "Últimos 7 dias do filtro", data: chartData, format: "count" })}
-    </section>
-
-    <section class="panel">
-      <div class="section-header">
-        <div>
-          <h3>Histórico de movimentações</h3>
-          <p>${period.label}</p>
-        </div>
-      </div>
-      ${movements.length ? `
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Produto</th>
-                <th>Tipo</th>
-                <th>Quantidade</th>
-                <th>Antes</th>
-                <th>Depois</th>
-                <th>Documento</th>
-                <th>Motivo</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${movements.map((movement) => `
-                <tr>
-                  <td>${formatDate(movement.movement_date)}</td>
-                  <td>
-                    <strong>${escapeHtml(movement.product_name)}</strong>
-                    <small>${escapeHtml(movement.product_sku)}</small>
-                  </td>
-                  <td>${renderBadge(movement.movement_type, statusTone(movement.movement_type))}</td>
-                  <td>${formatNumber(movement.quantity)}</td>
-                  <td>${formatNumber(movement.balance_before)}</td>
-                  <td>${formatNumber(movement.balance_after)}</td>
-                  <td>${escapeHtml(movement.document_reference || "-")}</td>
-                  <td>${escapeHtml(movement.reason || "-")}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-      ` : renderEmptyState("Sem movimentações no período", "Cadastre entradas, saídas ou ajustes para montar o histórico.")}
-    </section>
+    <div data-search-results-scope="movements">${renderMovementsResultsContent()}</div>
   `;
 }
 
@@ -2450,11 +3164,6 @@ function renderNfeValidationResult() {
 function renderNfePage() {
   const settings = state.data.fiscal_settings || {};
   const issued = state.data.nfe_issued || [];
-  const filteredIssued = getSimpleSearchRecords(
-    issued,
-    ["customer_name", "access_key", "number_nfe", "status_nfe", "payment_method", "source_type"],
-    state.filters.nfe.search,
-  );
   const authorizedCount = issued.filter((item) => item.status_nfe === "AUTORIZADA").length;
   const manualCount = issued.filter((item) => item.source_type === "manual").length;
   const recentIssued = issued.slice(0, 3);
@@ -2591,43 +3300,7 @@ function renderNfePage() {
           </label>
         </div>
       </section>
-      ${filteredIssued.length ? `
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Número</th>
-                <th>Série</th>
-                <th>Origem</th>
-                <th>Cliente</th>
-                <th>Status</th>
-                <th>Data</th>
-                <th>Total</th>
-                <th>Arquivos</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${filteredIssued.map((record) => `
-                <tr>
-                  <td>${escapeHtml(String(record.number_nfe))}</td>
-                  <td>${escapeHtml(String(record.series_nfe))}</td>
-                  <td>${renderBadge(record.source_type === "manual" ? "Manual" : "Venda", record.source_type === "manual" ? "brand" : "neutral")}</td>
-                  <td>${escapeHtml(record.customer_name || "-")}</td>
-                  <td>${renderBadge(record.status_nfe, statusTone(record.status_nfe))}</td>
-                  <td>${escapeHtml(record.authorization_date ? record.authorization_date.slice(0, 10) : "-")}</td>
-                  <td>${formatMoney(record.total_amount)}</td>
-                  <td>
-                    <div class="table-actions">
-                      <button type="button" class="table-action" data-action="download-nfe-xml" data-id="${record.id}">XML</button>
-                      <button type="button" class="table-action" data-action="download-nfe-pdf" data-id="${record.id}">PDF</button>
-                    </div>
-                  </td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-      ` : renderEmptyState("Nenhuma NF-e encontrada", "Ajuste a busca ou emita uma nova NF-e pela página dedicada.")}
+      <div data-search-results-scope="nfe">${renderNfeIssuedResults()}</div>
     </section>
   `;
 }
@@ -2635,7 +3308,6 @@ function renderNfePage() {
 
 function renderCustomersPage() {
   const search = state.filters.customers.search;
-  const customers = getSimpleSearchRecords(state.data.customers, ["name", "phone", "document", "address", "notes"], search);
   const editing = state.editing.customers;
 
   return `
@@ -2688,36 +3360,7 @@ function renderCustomersPage() {
             </label>
           </div>
         </section>
-
-        ${customers.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th>Telefone</th>
-                  <th>CPF/CNPJ</th>
-                  <th>Endereço</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${customers.map((customer) => `
-                  <tr>
-                    <td>
-                      <strong>${escapeHtml(customer.name)}</strong>
-                      <small>${escapeHtml(customer.notes || "Sem observações")}</small>
-                    </td>
-                    <td>${escapeHtml(customer.phone || "-")}</td>
-                    <td>${escapeHtml(customer.document || "-")}</td>
-                    <td>${escapeHtml(customer.address || "-")}</td>
-                    <td>${renderTableActions("customer", customer.id)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Nenhum cliente encontrado", "Tente outro termo ou cadastre um novo cliente.")}
+        <div data-search-results-scope="customers">${renderCustomersListResults()}</div>
       </article>
     </section>
   `;
@@ -2725,15 +3368,10 @@ function renderCustomersPage() {
 
 
 function renderSalesPage() {
-  const filter = state.filters.sales;
-  const period = getPeriod("sales");
-  const periodSales = filterByPeriod(state.data.sales, "sale_date", period);
-  const sales = getSimpleSearchRecords(periodSales, ["payment_method", "notes", "period", "sale_time"], filter.search);
   const editing = state.editing.sales;
   const currentDate = editing?.sale_date || localTodayIso();
   const currentTime = editing?.sale_time || currentTimeValue();
   const currentPeriod = inferSalePeriod(currentTime);
-  const shiftSummary = getSalesShiftSummary(sales);
   const salesPaymentMethods = state.data.options.sales_payment_methods?.length
     ? state.data.options.sales_payment_methods
     : state.data.options.payment_methods;
@@ -2751,12 +3389,7 @@ function renderSalesPage() {
       searchPlaceholder: "Buscar por pagamento, horário, período ou observação",
     })}
 
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Vendas da manhã", value: formatMoney(shiftSummary.totalMorning), helper: `${shiftSummary.countMorning} venda(s)`, tone: "brand" })}
-      ${renderMetricCard({ label: "Vendas da tarde", value: formatMoney(shiftSummary.totalAfternoon), helper: `${shiftSummary.countAfternoon} venda(s)` })}
-      ${renderMetricCard({ label: "Total do período", value: formatMoney(shiftSummary.total), helper: period.label, tone: "success" })}
-      ${renderMetricCard({ label: "Quantidade total", value: formatNumber(shiftSummary.count), helper: "Histórico filtrado" })}
-    </section>
+    <div data-search-results-scope="sales" data-search-results-part="metrics">${renderSalesMetricsSection()}</div>
 
     <section class="page-grid page-grid-2">
       <article class="panel">
@@ -2800,11 +3433,6 @@ function renderSalesPage() {
               <strong><span data-sale-date-summary>${escapeHtml(formatDate(currentDate))}</span> às <span data-sale-time-summary>${escapeHtml(currentTime)}</span></strong>
               <small data-sale-date-caption>Os campos já vêm preenchidos, mas você pode editar manualmente antes de salvar.</small>
             </div>
-            <div class="quick-summary-card emphasis">
-              <span>Total desta venda</span>
-              <strong data-sale-quick-total>${formatMoney(draftAmount)}</strong>
-              <small>O histórico continua disponível logo abaixo.</small>
-            </div>
           </div>
 
           <div class="form-actions field-span-2">
@@ -2813,43 +3441,7 @@ function renderSalesPage() {
           </div>
         </form>
       </article>
-
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Histórico de vendas</h3>
-            <p>${period.label}</p>
-          </div>
-        </div>
-        ${sales.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Hora</th>
-                  <th>Período</th>
-                  <th>Pagamento</th>
-                  <th>Total</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${sales.map((sale) => `
-                  <tr>
-                    <td>${formatDate(sale.sale_date)}</td>
-                    <td>${escapeHtml(sale.sale_time || "-")}</td>
-                    <td>${renderBadge(resolveSalePeriod(sale), statusTone(resolveSalePeriod(sale)))}</td>
-                    <td>${escapeHtml(sale.payment_method)}</td>
-                    <td>${formatMoney(sale.total_amount)}</td>
-                    <td>${renderTableActions("sale", sale.id)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Nenhuma venda encontrada", "Cadastre vendas ou altere o período do filtro.")}
-      </article>
+      <div data-search-results-scope="sales" data-search-results-part="history">${renderSalesHistoryPanel()}</div>
     </section>
   `;
 }
@@ -2870,7 +3462,7 @@ function buildQuoteDraftSnapshot() {
     form,
     normalizePayload(Object.fromEntries(new FormData(form).entries())),
   );
-  const items = getQuoteItems(form).filter((item) => item.item_name);
+  const items = getQuoteItems().filter((item) => item.item_name);
   const customerSelect = form.querySelector('[name="customer_id"]');
   const manualCustomerName = String(payload.customer_name_manual || "").trim();
   const selectedCustomerName = customerSelect?.value
@@ -3322,26 +3914,12 @@ function openQuoteOutput(quoteId, mode = "print") {
 function renderQuotesPage() {
   const search = state.filters.quotes.search;
   const status = state.filters.quotes.status;
-  let quotes = [...state.data.quotes];
-  if (search) {
-    const normalizedSearch = search.toLowerCase();
-    quotes = quotes.filter((quote) => [
-      quote.customer_name,
-      quote.status,
-      quote.notes,
-      quote.validity_date,
-      summarizeQuoteItems(quote),
-    ].some((value) => String(value || "").toLowerCase().includes(normalizedSearch)));
-  }
-  if (status) {
-    quotes = quotes.filter((quote) => quote.status === status);
-  }
   const editing = state.editing.quotes;
+  const composer = syncQuoteComposerState();
   const approvedCount = countBy(state.data.quotes, (quote) => quote.status === "Aprovado");
-  const quoteItems = editing?.items?.length ? editing.items : [{}];
   const initialCustomerManualName = editing?.customer_name_manual || "";
   const initialDiscount = Number(editing?.discount_amount || 0);
-  const initialSubtotal = sumBy(quoteItems, (item) => item.total_price || (Number(item.quantity || 0) * Number(item.unit_price || 0)));
+  const initialSubtotal = sumBy(composer.items, (item) => item.total_price || (Number(item.quantity || 0) * Number(item.unit_price || 0)));
   const initialTotal = Math.max(initialSubtotal - initialDiscount, 0);
 
   return `
@@ -3399,13 +3977,15 @@ function renderQuotesPage() {
           <div class="field-span-2 item-list-card">
             <div class="section-header compact">
               <div>
-                <h3>Itens do orçamento</h3>
-                <p>Digite os itens manualmente, sem depender do cadastro de produtos.</p>
+                <h3>Lançamento de itens</h3>
+                <p>Adicione um item por vez e acompanhe a lista do orçamento logo abaixo.</p>
               </div>
-              <button type="button" class="btn btn-secondary" data-action="add-quotes-item">Adicionar item</button>
             </div>
-            <div data-items-container>
-              ${quoteItems.map((item) => renderQuoteItemRow(item)).join("")}
+            <div class="quote-entry-layout">
+              ${renderQuoteDraftEditor()}
+              <div data-quote-items-list>
+                ${renderQuoteItemsList()}
+              </div>
             </div>
             <div class="quote-totals-grid">
               <div class="items-total">
@@ -3440,37 +4020,7 @@ function renderQuotesPage() {
             <p>Busque, edite ou altere o status das propostas.</p>
           </div>
         </div>
-
-        ${quotes.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Validade</th>
-                  <th>Cliente</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th>Itens</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${quotes.map((quote) => `
-                  <tr>
-                    <td>${formatDate(quote.quote_date)}</td>
-                    <td>${formatDate(quote.validity_date || quote.quote_date)}</td>
-                    <td>${escapeHtml(quote.customer_name)}</td>
-                    <td>${renderBadge(quote.status, statusTone(quote.status))}</td>
-                    <td>${formatMoney(quote.total_amount)}</td>
-                    <td><small>${escapeHtml(summarizeQuoteItems(quote) || "Sem itens")}</small></td>
-                    <td>${renderQuoteTableActions(quote.id)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Nenhum orçamento encontrado", "Cadastre um novo orçamento ou altere a busca.")}
+        <div data-search-results-scope="quotes">${renderQuotesListResults()}</div>
       </article>
     </section>
   `;
@@ -3478,21 +4028,12 @@ function renderQuotesPage() {
 
 
 function renderExpensesPage() {
-  const period = getPeriod("expenses");
-  const filteredExpenses = getSimpleSearchRecords(
-    filterByPeriod(state.data.expenses, "payment_date", period),
-    ["description", "category", "payment_method", "supplier", "notes"],
-    state.filters.expenses.search,
-  );
   const editing = state.editing.expenses;
 
   const todayExpenses = filterByPeriod(state.data.expenses, "payment_date", getPresetRange("today"));
   const weekExpenses = filterByPeriod(state.data.expenses, "payment_date", getPresetRange("week"));
   const monthExpenses = filterByPeriod(state.data.expenses, "payment_date", getPresetRange("month"));
   const yearExpenses = filterByPeriod(state.data.expenses, "payment_date", getPresetRange("year"));
-  const byCategory = getCategoryTotals(filteredExpenses, "category", "amount");
-  const byPayment = getPaymentTotals(filteredExpenses, "payment_method", "amount");
-  const recentExpenses = sortByDateDesc(filteredExpenses, "payment_date").slice(0, 6);
 
   return `
     ${renderHero(
@@ -3512,12 +4053,7 @@ function renderExpensesPage() {
       ${renderMetricCard({ label: "No ano", value: formatMoney(sumBy(yearExpenses, (expense) => expense.amount)), helper: `${yearExpenses.length} conta(s)` })}
     </section>
 
-    <section class="dashboard-grid">
-      ${renderBarChart({ title: "Despesas por dia", subtitle: "Últimos 7 dias", data: groupByDay(state.data.expenses, "payment_date", (expense) => expense.amount, 7) })}
-      ${renderBarChart({ title: "Despesas por mês", subtitle: "Últimos 6 meses", data: groupByMonth(state.data.expenses, "payment_date", (expense) => expense.amount, 6) })}
-      ${renderStatList({ title: "Totais por categoria", subtitle: period.label, rows: byCategory })}
-      ${renderStatList({ title: "Totais por pagamento", subtitle: period.label, rows: byPayment })}
-    </section>
+    <div data-search-results-scope="expenses" data-search-results-part="insights">${renderExpensesInsightsSection()}</div>
 
     <section class="page-grid page-grid-2">
       <article class="panel">
@@ -3543,64 +4079,14 @@ function renderExpensesPage() {
           </div>
         </form>
       </article>
-
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Últimos lançamentos</h3>
-            <p>${period.label}</p>
-          </div>
-        </div>
-        ${recentExpenses.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Descrição</th>
-                  <th>Categoria</th>
-                  <th>Pagamento</th>
-                  <th>Valor</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${recentExpenses.map((expense) => `
-                  <tr>
-                    <td>${formatDate(expense.payment_date)}</td>
-                    <td>
-                      <strong>${escapeHtml(expense.description)}</strong>
-                      <small>${escapeHtml(expense.supplier || "-")}</small>
-                    </td>
-                    <td>${escapeHtml(expense.category)}</td>
-                    <td>${escapeHtml(expense.payment_method)}</td>
-                    <td>${formatMoney(expense.amount)}</td>
-                    <td>${renderTableActions("expense", expense.id)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Nenhuma conta paga encontrada", "Cadastre uma nova despesa ou ajuste o filtro.")}
-      </article>
+      <div data-search-results-scope="expenses" data-search-results-part="recent">${renderExpensesRecentPanel()}</div>
     </section>
   `;
 }
 
 
 function renderChecksPage() {
-  const period = getPeriod("checks");
-  const checksInPeriod = filterByPeriod(state.data.checks, "due_date", period);
-  let filteredChecks = [...checksInPeriod];
-  filteredChecks = getSimpleSearchRecords(filteredChecks, ["check_number", "beneficiary", "notes"], state.filters.checks.search);
-  if (state.filters.checks.status) {
-    filteredChecks = filteredChecks.filter((check) => check.effective_status === state.filters.checks.status || check.status === state.filters.checks.status);
-  }
   const editing = state.editing.checks;
-
-  const pendingChecks = checksInPeriod.filter((check) => check.effective_status === "Pendente");
-  const compensatedChecks = checksInPeriod.filter((check) => check.effective_status === "Compensado");
-  const overdueChecks = checksInPeriod.filter((check) => check.effective_status === "Atrasado");
 
   return `
     ${renderHero(
@@ -3616,23 +4102,8 @@ function renderChecksPage() {
       manualDateFields: ["start", "end"],
     })}
 
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Cheques pendentes", value: formatMoney(sumBy(pendingChecks, (check) => check.amount)), helper: `${pendingChecks.length} registro(s)`, tone: "warning" })}
-      ${renderMetricCard({ label: "Cheques compensados", value: formatMoney(sumBy(compensatedChecks, (check) => check.amount)), helper: `${compensatedChecks.length} registro(s)`, tone: "success" })}
-      ${renderMetricCard({ label: "Cheques atrasados", value: formatMoney(sumBy(overdueChecks, (check) => check.amount)), helper: `${overdueChecks.length} registro(s)`, tone: overdueChecks.length ? "danger" : "success" })}
-      ${renderMetricCard({ label: "No filtro", value: formatMoney(sumBy(filteredChecks, (check) => check.amount)), helper: `${filteredChecks.length} registro(s)` })}
-    </section>
-
-    <section class="dashboard-grid">
-      ${renderBarChart({ title: "Cheques por semana", subtitle: "Agrupado pela data prevista", data: groupByWeek(checksInPeriod, "due_date", (check) => check.amount, 8) })}
-      ${renderBarChart({ title: "Cheques por mês", subtitle: "Agrupado pela data prevista", data: groupByMonth(checksInPeriod, "due_date", (check) => check.amount, 6) })}
-      ${renderStatList({ title: "Quantidade por status", subtitle: period.label, rows: getStatusTotals(checksInPeriod, "effective_status", "amount"), money: true })}
-      ${renderStatList({
-        title: "Cheques atrasados",
-        subtitle: "Lista de atenção imediata",
-        rows: overdueChecks.map((check) => ({ label: `${check.check_number} - ${check.beneficiary}`, value: check.amount, helper: `${check.days_overdue} dia(s) de atraso` })),
-      })}
-    </section>
+    <div data-search-results-scope="checks" data-search-results-part="metrics">${renderChecksMetricsSection()}</div>
+    <div data-search-results-scope="checks" data-search-results-part="dashboard">${renderChecksDashboardSection()}</div>
 
     <section class="page-grid page-grid-2">
       <article class="panel">
@@ -3658,50 +4129,7 @@ function renderChecksPage() {
           </div>
         </form>
       </article>
-
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Lista de cheques</h3>
-              <p>Filtro aplicado pela data prevista.</p>
-          </div>
-        </div>
-        ${filteredChecks.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Número</th>
-                  <th>Beneficiário</th>
-                  <th>Valor</th>
-                  <th>Emissão</th>
-                  <th>Previsto</th>
-                  <th>Status</th>
-                  <th>Dias</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                ${filteredChecks.map((check) => `
-                  <tr class="${check.is_overdue ? "row-danger" : ""}">
-                    <td>${escapeHtml(check.check_number)}</td>
-                    <td>${escapeHtml(check.beneficiary)}</td>
-                    <td>${formatMoney(check.amount)}</td>
-                    <td>${formatDate(check.issue_date)}</td>
-                    <td>${formatDate(check.due_date)}</td>
-                    <td>${renderBadge(check.effective_status, statusTone(check.effective_status))}</td>
-                    <td>
-                      <small>Pendente: ${formatNumber(check.days_pending)}</small><br>
-                      <small>Atraso: ${formatNumber(check.days_overdue)}</small>
-                    </td>
-                    <td>${renderTableActions("check", check.id)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Nenhum cheque encontrado", "Cadastre um cheque ou ajuste o período e o status.")}
-      </article>
+      <div data-search-results-scope="checks" data-search-results-part="list">${renderChecksListPanel()}</div>
     </section>
   `;
 }
@@ -3907,6 +4335,24 @@ async function handlePageSubmit(event) {
 }
 
 
+function handlePageKeyDown(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const form = target.closest("form");
+  if (form?.getAttribute("id") !== "quotes-form") return;
+  if (event.key !== "Enter" || event.shiftKey) return;
+
+  const fieldName = target.getAttribute("name") || "";
+  if (!["draft_item_name", "draft_quantity", "draft_unit_price"].includes(fieldName)) {
+    return;
+  }
+
+  event.preventDefault();
+  handleSaveQuoteItem(form);
+}
+
+
 function handlePageBeforeInput(event) {
   const target = event.target;
   if (!isMoneyInput(target)) return;
@@ -3980,23 +4426,34 @@ function handlePageClick(event) {
     "import-products-sheet": () => {
       void importProductsSheet();
     },
-    "add-quotes-item": () => {
+    "save-quote-item": () => {
       const form = document.getElementById("quotes-form");
-      mountQuoteItem(form);
+      if (form) {
+        handleSaveQuoteItem(form);
+      }
+    },
+    "edit-quote-item": () => {
+      const form = document.getElementById("quotes-form");
+      const index = Number(button.dataset.index);
+      if (form && Number.isInteger(index)) {
+        handleEditQuoteItem(form, index);
+      }
+    },
+    "cancel-quote-item-edit": () => {
+      const form = document.getElementById("quotes-form");
+      if (form) {
+        handleCancelQuoteItemEdit(form);
+      }
     },
     "add-sale-item": () => {
       const form = document.getElementById("sales-form");
       mountSaleItem(form);
     },
     "remove-quote-item": () => {
-      const row = button.closest(".item-row");
       const form = button.closest("form");
-      if (row && form) {
-        row.remove();
-        if (!form.querySelector(".item-row")) {
-          mountQuoteItem(form);
-        }
-        updateQuoteTotals(form);
+      const index = Number(button.dataset.index);
+      if (form && Number.isInteger(index)) {
+        handleRemoveQuoteItem(form, index);
       }
     },
     "remove-sale-item": () => {
@@ -4148,16 +4605,10 @@ function handlePageInput(event) {
     if (scope === "products") {
       state.filters.products.page = 1;
     }
-    state.focusField = {
-      scope,
-      name: target.name,
-      selectionStart: target.selectionStart ?? target.value.length,
-      selectionEnd: target.selectionEnd ?? target.value.length,
-    };
     clearTimeout(searchTimers.get(scope));
     searchTimers.set(scope, setTimeout(() => {
       searchTimers.delete(scope);
-      renderCurrentPage({ preserveFilterScope: scope });
+      renderFilterResultsScope(scope);
     }, 160));
     return;
   }
@@ -4165,7 +4616,7 @@ function handlePageInput(event) {
   const form = target.closest("form");
   if (
     form?.getAttribute("id") === "quotes-form"
-    && ["quantity", "unit_price", "discount_amount"].includes(target.getAttribute("name") || "")
+    && ["draft_quantity", "draft_unit_price", "discount_amount", "draft_item_name"].includes(target.getAttribute("name") || "")
   ) {
     updateQuoteTotals(form);
   }
@@ -4175,13 +4626,6 @@ function handlePageInput(event) {
     && ["quantity", "unit_price"].includes(target.getAttribute("name") || "")
   ) {
     updateSaleTotals(form);
-  }
-
-  if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "amount") {
-    const preview = form.querySelector("[data-sale-quick-total]");
-    if (preview) {
-      preview.textContent = formatMoney(parseMoneyInputValue(target.value));
-    }
   }
 
   if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_time") {
@@ -4211,6 +4655,9 @@ function handlePageInput(event) {
 
 function clearEditing(scope) {
   state.editing[scope] = null;
+  if (scope === "quotes") {
+    resetQuoteComposer();
+  }
   clearFormFeedback(scope);
   renderCurrentPage();
 }
@@ -4218,6 +4665,9 @@ function clearEditing(scope) {
 
 function editEntity(scope, id) {
   state.editing[scope] = state.data[scope].find((item) => String(item.id) === String(id)) || null;
+  if (scope === "quotes") {
+    resetQuoteComposer();
+  }
   clearFormFeedback(scope);
   renderCurrentPage();
 }
@@ -4231,6 +4681,9 @@ async function deleteEntity(scope, id, label) {
   try {
     await api.remove(scope, id);
     state.editing[scope] = null;
+    if (scope === "quotes") {
+      resetQuoteComposer();
+    }
     clearFormFeedback(scope);
     await loadData();
     showToast(`${label.charAt(0).toUpperCase() + label.slice(1)} excluído com sucesso.`);
@@ -4399,7 +4852,11 @@ async function submitQuotesForm(form) {
   );
   const id = payload.id;
   delete payload.id;
-  payload.items = getQuoteItems(form);
+  delete payload.draft_item_name;
+  delete payload.draft_unit;
+  delete payload.draft_quantity;
+  delete payload.draft_unit_price;
+  payload.items = getQuoteItems();
 
   try {
     if (!payload.quote_date || !payload.validity_date || !payload.status) {
@@ -4447,6 +4904,7 @@ async function submitQuotesForm(form) {
       showToast("Orçamento cadastrado com sucesso.");
     }
     state.editing.quotes = null;
+    resetQuoteComposer();
     await loadData();
   } catch (error) {
     updateFormFeedback("quotes", form, error.message, "error");

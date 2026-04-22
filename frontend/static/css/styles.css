@@ -453,7 +453,7 @@ textarea {
 
 .quick-sale-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -471,6 +471,7 @@ textarea {
   border: 1px solid rgba(30, 58, 138, 0.1);
   background: rgba(243, 244, 246, 0.88);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  align-items: start;
 }
 
 .quick-summary-card strong {
@@ -481,21 +482,6 @@ textarea {
 .quick-summary-card small {
   color: var(--muted);
   line-height: 1.5;
-}
-
-.quick-summary-card.emphasis {
-  background: linear-gradient(145deg, rgba(30, 58, 138, 0.98), rgba(30, 64, 175, 0.96));
-  border-color: rgba(30, 58, 138, 0.28);
-}
-
-.quick-summary-card.emphasis span,
-.quick-summary-card.emphasis small {
-  color: rgba(219, 234, 254, 0.92);
-}
-
-.quick-summary-card.emphasis strong {
-  color: #ffffff;
-  font-size: 1.45rem;
 }
 
 .nfe-flow-card {
@@ -1922,6 +1908,94 @@ textarea {
   background: rgba(22, 43, 51, 0.04);
 }
 
+.quote-entry-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.quote-entry-form-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(30, 58, 138, 0.08);
+  box-shadow: 0 12px 24px rgba(30, 58, 138, 0.06);
+}
+
+.quote-entry-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(110px, 0.8fr) minmax(130px, 0.9fr) minmax(190px, 1.05fr) minmax(150px, 0.9fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.quote-entry-form-grid label,
+.quote-entry-total-box {
+  min-width: 0;
+}
+
+.quote-entry-name {
+  min-width: 0;
+}
+
+.quote-entry-unit {
+  max-width: 150px;
+}
+
+.quote-entry-quantity {
+  max-width: 150px;
+}
+
+.quote-entry-price {
+  min-width: 176px;
+}
+
+.quote-entry-total-box {
+  min-height: 78px;
+  align-content: center;
+  padding: 10px 12px;
+}
+
+.quote-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+.quote-items-table-wrapper {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.quote-items-table tbody td {
+  vertical-align: middle;
+}
+
+.quote-items-table tbody td small {
+  display: block;
+  margin-top: 4px;
+}
+
+.quote-items-empty {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px dashed rgba(30, 58, 138, 0.18);
+  background: rgba(219, 234, 254, 0.3);
+  color: var(--muted);
+}
+
+.quote-items-empty strong {
+  color: var(--text);
+}
+
+.quote-items-empty p {
+  margin: 0;
+  line-height: 1.55;
+}
+
 .item-row {
   display: grid;
   grid-template-columns: 2fr 0.7fr 1fr 0.8fr auto;
@@ -2376,6 +2450,22 @@ textarea {
   }
 
   .item-row {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-entry-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-entry-unit,
+  .quote-entry-quantity,
+  .quote-entry-price {
+    max-width: none;
+    min-width: 0;
+  }
+
+  .quote-entry-actions {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
