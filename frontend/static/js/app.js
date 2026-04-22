@@ -791,10 +791,17 @@ async function handleLoginSubmit(event) {
 }
 
 
+function clearSearchTimers() {
+  searchTimers.forEach((timerId) => clearTimeout(timerId));
+  searchTimers.clear();
+}
+
+
 async function handleLogout() {
   try {
     await api.logout();
   } finally {
+    clearSearchTimers();
     state.user = null;
     state.notifications.items = [];
     state.notifications.open = false;
@@ -832,6 +839,7 @@ async function loadData() {
 
 
 function setPage(page) {
+  clearSearchTimers();
   state.page = page;
   renderCurrentPage();
   if (isMobileSidebarViewport()) {
@@ -840,7 +848,8 @@ function setPage(page) {
 }
 
 
-function renderCurrentPage() {
+function renderCurrentPage(options = {}) {
+  const { preserveFilterScope = "" } = options;
   elements.pageTitle.textContent = pageTitles[state.page] || "Sistema";
   document.title = `${BRAND_NAME} | ${pageTitles[state.page] || "Sistema"}`;
   elements.navLinks.forEach((link) => {
@@ -867,7 +876,31 @@ function renderCurrentPage() {
     reports: renderReportsPage,
   };
 
-  elements.pageContent.innerHTML = renderMap[state.page]();
+  const template = document.createElement("template");
+  template.innerHTML = renderMap[state.page]();
+
+  let preservedToolbar = null;
+  if (preserveFilterScope) {
+    const currentToolbar = elements.pageContent.querySelector(`[data-filter-scope="${preserveFilterScope}"]`);
+    const incomingToolbar = template.content.querySelector(`[data-filter-scope="${preserveFilterScope}"]`);
+    if (currentToolbar && incomingToolbar) {
+      const placeholder = document.createElement("div");
+      placeholder.setAttribute("data-preserved-filter-scope", preserveFilterScope);
+      incomingToolbar.replaceWith(placeholder);
+      currentToolbar.remove();
+      preservedToolbar = currentToolbar;
+    }
+  }
+
+  elements.pageContent.replaceChildren(template.content);
+
+  if (preservedToolbar) {
+    const placeholder = elements.pageContent.querySelector(`[data-preserved-filter-scope="${preserveFilterScope}"]`);
+    if (placeholder) {
+      placeholder.replaceWith(preservedToolbar);
+    }
+  }
+
   syncMoneyInputs(elements.pageContent);
   const quotesForm = document.getElementById("quotes-form");
   if (quotesForm) updateQuoteTotals(quotesForm);
@@ -884,10 +917,12 @@ function restoreFocusField() {
     `[data-filter-scope="${state.focusField.scope}"] [name="${state.focusField.name}"]`,
   );
   if (target) {
-    target.focus();
+    target.focus({ preventScroll: true });
     if (typeof target.setSelectionRange === "function") {
       const length = target.value.length;
-      target.setSelectionRange(length, length);
+      const start = Math.min(state.focusField.selectionStart ?? length, length);
+      const end = Math.min(state.focusField.selectionEnd ?? start, length);
+      target.setSelectionRange(start, end);
     }
   }
   state.focusField = null;
@@ -4113,9 +4148,17 @@ function handlePageInput(event) {
     if (scope === "products") {
       state.filters.products.page = 1;
     }
-    state.focusField = { scope, name: target.name };
+    state.focusField = {
+      scope,
+      name: target.name,
+      selectionStart: target.selectionStart ?? target.value.length,
+      selectionEnd: target.selectionEnd ?? target.value.length,
+    };
     clearTimeout(searchTimers.get(scope));
-    searchTimers.set(scope, setTimeout(() => renderCurrentPage(), 160));
+    searchTimers.set(scope, setTimeout(() => {
+      searchTimers.delete(scope);
+      renderCurrentPage({ preserveFilterScope: scope });
+    }, 160));
     return;
   }
 

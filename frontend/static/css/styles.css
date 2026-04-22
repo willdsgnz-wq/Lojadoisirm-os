@@ -25,6 +25,13 @@
   --radius-sm: 12px;
   --sidebar-width-expanded: 310px;
   --sidebar-width-collapsed: 94px;
+  --sidebar-bg: #0f204f;
+  --sidebar-bg-strong: #081731;
+  --sidebar-bg-soft: #1a3977;
+  --sidebar-accent: #ff6a00;
+  --sidebar-accent-strong: #e85d04;
+  --sidebar-text: #f8fafc;
+  --sidebar-text-muted: rgba(219, 234, 254, 0.72);
 }
 
 * {
@@ -552,9 +559,11 @@ textarea {
 
 .app-shell {
   min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: var(--sidebar-width-expanded) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
+  overflow: hidden;
   transition: grid-template-columns 0.28s ease;
 }
 
@@ -565,18 +574,39 @@ textarea {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 22px;
-  background: linear-gradient(180deg, rgba(30, 58, 138, 0.98), rgba(30, 64, 175, 0.96));
-  color: #eff7f5;
+  gap: 18px;
+  padding: 24px 20px 22px;
+  background:
+    linear-gradient(180deg, rgba(8, 23, 49, 0.98), rgba(15, 32, 79, 0.98) 42%, rgba(26, 57, 119, 0.96) 100%);
+  color: var(--sidebar-text);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   position: sticky;
   top: 0;
   height: 100vh;
   z-index: 30;
   min-width: 0;
-  overflow: visible;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  box-shadow: 18px 0 44px rgba(4, 12, 33, 0.22);
   transition: padding 0.28s ease, transform 0.24s ease, box-shadow 0.24s ease;
+}
+
+.sidebar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, rgba(255, 106, 0, 0.18), transparent 26%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.04), transparent 38%);
+  pointer-events: none;
+}
+
+.sidebar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar-top,
@@ -587,31 +617,39 @@ textarea {
 }
 
 .sidebar-top {
-  justify-content: space-between;
-  min-height: 56px;
+  justify-content: flex-start;
+  min-height: auto;
+  padding: 4px 6px 18px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .brand-mini strong {
   display: block;
-  font-size: 1rem;
+  font-size: 0.98rem;
+  line-height: 1.24;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+  text-transform: uppercase;
 }
 
 .brand-mini span,
 .sidebar-footer span {
-  color: rgba(239, 247, 245, 0.64);
+  color: var(--sidebar-text-muted);
   font-size: 0.9rem;
 }
 
 .brand-mini {
-  align-items: center;
+  align-items: flex-start;
   flex-direction: row;
   flex: 1 1 auto;
   min-width: 0;
+  width: 100%;
 }
 
 .brand-mini-copy {
   display: grid;
-  gap: 4px;
+  gap: 0;
   flex: 1 1 auto;
   min-width: 0;
   transition: opacity 0.22s ease, transform 0.22s ease, max-width 0.22s ease;
@@ -621,7 +659,10 @@ textarea {
 .brand-mini-copy span {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.brand-mini-copy strong {
+  white-space: normal;
 }
 
 .sidebar-brand-image {
@@ -634,71 +675,150 @@ textarea {
 
 .sidebar-nav {
   display: grid;
-  gap: 10px;
+  gap: 18px;
   width: 100%;
+}
+
+.sidebar-group {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-group + .sidebar-group {
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.sidebar-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  color: rgba(219, 234, 254, 0.66);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.sidebar-group-title::before {
+  content: "";
+  width: 16px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sidebar-accent), rgba(255, 106, 0, 0.18));
 }
 
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 12px;
-  border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.02);
-  color: rgba(239, 247, 245, 0.88);
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(248, 250, 252, 0.88);
   text-align: left;
-  min-height: 54px;
-  padding: 12px 14px;
+  min-height: 58px;
+  padding: 12px 16px 12px 18px;
   border-radius: 18px;
   font-size: 0.98rem;
+  font-weight: 700;
   cursor: pointer;
   width: 100%;
   position: relative;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: background 0.22s ease, border-color 0.22s ease, color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
 }
 
-.nav-link.active,
+.nav-link::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  bottom: 11px;
+  width: 4px;
+  border-radius: 0 999px 999px 0;
+  background: transparent;
+  opacity: 0;
+  transform: scaleY(0.62);
+  transition: opacity 0.22s ease, transform 0.22s ease, background 0.22s ease;
+}
+
 .nav-link:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.12);
-  color: white;
-  box-shadow: 0 12px 24px rgba(8, 15, 38, 0.18);
+  color: #ffffff;
+  transform: translateX(2px);
+  box-shadow: 0 14px 26px rgba(4, 12, 33, 0.22);
+}
+
+.nav-link:hover::before {
+  background: rgba(255, 106, 0, 0.56);
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.nav-link.active {
+  background: linear-gradient(135deg, var(--sidebar-accent), #f97316);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  box-shadow: 0 18px 32px rgba(255, 106, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.nav-link.active::before {
+  background: var(--sidebar-accent-strong);
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.nav-link.active:hover {
+  transform: none;
 }
 
 .nav-link-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.96);
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(219, 234, 254, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #dbeafe;
   flex-shrink: 0;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: background 0.22s ease, color 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
 }
 
 .nav-link-label {
   flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
+  letter-spacing: 0.01em;
   transition: opacity 0.2s ease, transform 0.2s ease, max-width 0.2s ease;
 }
 
 .nav-link svg,
 .icon-button svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.9;
+  stroke-width: 2.05;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.nav-link.active .nav-link-icon,
 .nav-link:hover .nav-link-icon {
-  background: rgba(249, 115, 22, 0.2);
+  background: rgba(219, 234, 254, 0.16);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  transform: scale(1.03);
+}
+
+.nav-link.active .nav-link-icon {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.18);
   color: #ffffff;
 }
 
@@ -725,6 +845,11 @@ textarea {
 .app-main {
   padding: 22px;
   min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
 }
 
 .topbar {
@@ -798,6 +923,7 @@ textarea {
 
 .app-shell.sidebar-collapsed .sidebar-top {
   justify-content: center;
+  padding-inline: 0;
 }
 
 .app-shell.sidebar-collapsed .brand-mini {
@@ -815,12 +941,29 @@ textarea {
 
 .app-shell.sidebar-collapsed .sidebar-nav {
   justify-items: center;
+  gap: 14px;
+}
+
+.app-shell.sidebar-collapsed .sidebar-group {
+  width: 100%;
+  gap: 10px;
+}
+
+.app-shell.sidebar-collapsed .sidebar-group + .sidebar-group {
+  padding-top: 10px;
+}
+
+.app-shell.sidebar-collapsed .sidebar-group-title {
+  height: 0;
+  padding: 0;
+  overflow: hidden;
+  opacity: 0;
 }
 
 .app-shell.sidebar-collapsed .nav-link {
   justify-content: center;
   gap: 0;
-  padding-inline: 0;
+  padding: 10px 0;
 }
 
 .app-shell.sidebar-collapsed .nav-link-label {
@@ -859,8 +1002,8 @@ textarea {
 }
 
 .app-shell.sidebar-collapsed .nav-link .nav-link-icon {
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
 }
 
 .sidebar-backdrop.visible {
@@ -2109,8 +2252,8 @@ textarea {
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
-    width: min(88vw, 340px);
-    padding: 20px 18px 28px;
+    width: min(88vw, 352px);
+    padding: 24px 18px 28px;
     overflow-y: auto;
     overflow-x: hidden;
     transform: translateX(calc(-100% - 20px));
@@ -2123,30 +2266,37 @@ textarea {
   }
 
   .app-shell.sidebar-collapsed .sidebar {
-    padding: 20px 18px 28px;
+    padding: 24px 18px 28px;
   }
 
   .app-shell.sidebar-collapsed .sidebar-top {
-    justify-content: space-between;
+    justify-content: flex-start;
   }
 
   .app-shell.sidebar-collapsed .brand-mini {
     justify-content: flex-start;
-    gap: 14px;
+    gap: 0;
   }
 
   .app-shell.sidebar-collapsed .brand-mini-copy {
     width: auto;
-    max-width: 220px;
+    max-width: none;
     opacity: 1;
     transform: none;
     pointer-events: auto;
   }
 
+  .app-shell.sidebar-collapsed .sidebar-group-title {
+    height: auto;
+    padding: 0 10px;
+    overflow: visible;
+    opacity: 1;
+  }
+
   .app-shell.sidebar-collapsed .nav-link {
     justify-content: flex-start;
-    gap: 12px;
-    padding: 12px 14px;
+    gap: 14px;
+    padding: 12px 16px 12px 18px;
   }
 
   .app-shell.sidebar-collapsed .nav-link-label {
