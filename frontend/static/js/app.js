@@ -4025,6 +4025,30 @@ function renderExpensesPage() {
       "Registre despesas da loja, acompanhe totais por período e visualize categorias com mais gasto.",
     )}
 
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>${editing ? "Editar conta paga" : "Nova conta paga"}</h3>
+          <p>${editing ? "Atualize a despesa selecionada." : "Lance as despesas pagas pela loja."}</p>
+        </div>
+      </div>
+      <form id="expenses-form" class="form-grid">
+        <input type="hidden" name="id" value="${editing?.id ?? ""}">
+        ${renderFormFeedback("expenses")}
+        <label><span>Data do pagamento</span><input type="date" name="payment_date" value="${editing?.payment_date || todayIso()}" required></label>
+        <label><span>Descrição</span><input type="text" name="description" value="${escapeHtml(toFormValue(editing?.description))}" required></label>
+        <label><span>Categoria</span><input type="text" name="category" value="${escapeHtml(toFormValue(editing?.category))}" required></label>
+        <label><span>Valor</span>${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}</label>
+        <label><span>Forma de pagamento</span><select name="payment_method" required>${renderPaymentOptions(editing?.payment_method || state.data.options.payment_methods[0])}</select></label>
+        <label><span>Fornecedor</span><input type="text" name="supplier" value="${escapeHtml(toFormValue(editing?.supplier))}"></label>
+        <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
+        <div class="form-actions field-span-2">
+          <button type="submit" class="btn btn-primary">${editing ? "Salvar conta" : "Cadastrar conta paga"}</button>
+          <button type="button" class="btn btn-secondary" data-action="clear-expenses-form">Limpar formulário</button>
+        </div>
+      </form>
+    </article>
+
     ${renderPeriodToolbar("expenses", {
       showSearch: true,
       searchPlaceholder: "Buscar por descrição, categoria, fornecedor",
@@ -4039,32 +4063,7 @@ function renderExpensesPage() {
 
     <div data-search-results-scope="expenses" data-search-results-part="insights">${renderExpensesInsightsSection()}</div>
 
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>${editing ? "Editar conta paga" : "Nova conta paga"}</h3>
-            <p>${editing ? "Atualize a despesa selecionada." : "Lance as despesas pagas pela loja."}</p>
-          </div>
-        </div>
-        <form id="expenses-form" class="form-grid">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
-          ${renderFormFeedback("expenses")}
-          <label><span>Data do pagamento</span><input type="date" name="payment_date" value="${editing?.payment_date || todayIso()}" required></label>
-          <label><span>Descrição</span><input type="text" name="description" value="${escapeHtml(toFormValue(editing?.description))}" required></label>
-          <label><span>Categoria</span><input type="text" name="category" value="${escapeHtml(toFormValue(editing?.category))}" required></label>
-          <label><span>Valor</span>${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}</label>
-          <label><span>Forma de pagamento</span><select name="payment_method" required>${renderPaymentOptions(editing?.payment_method || state.data.options.payment_methods[0])}</select></label>
-          <label><span>Fornecedor</span><input type="text" name="supplier" value="${escapeHtml(toFormValue(editing?.supplier))}"></label>
-          <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar conta" : "Cadastrar conta paga"}</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-expenses-form">Limpar formulário</button>
-          </div>
-        </form>
-      </article>
-      <div data-search-results-scope="expenses" data-search-results-part="recent">${renderExpensesRecentPanel()}</div>
-    </section>
+    <div data-search-results-scope="expenses" data-search-results-part="recent">${renderExpensesRecentPanel()}</div>
   `;
 }
 
@@ -4077,6 +4076,50 @@ function renderBillsPage() {
       "Boletos",
       "Controle os boletos a pagar com alertas de vencimento, filtros rápidos e atualização imediata do status.",
     )}
+
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>${editing ? "Editar boleto" : "Novo boleto"}</h3>
+          <p>${editing ? "Atualize beneficiário, vencimento, valor e status do boleto selecionado." : "Cadastre boletos manualmente e marque como pago quando necessário."}</p>
+        </div>
+      </div>
+      <form id="bills-form" class="form-grid">
+        <input type="hidden" name="id" value="${editing?.id ?? ""}">
+        ${renderFormFeedback("bills")}
+        <label class="field-span-2">
+          <span>Beneficiário</span>
+          <input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" required>
+        </label>
+        <label>
+          <span>Data do vencimento</span>
+          <input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required>
+        </label>
+        <label>
+          <span>Valor</span>
+          ${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}
+        </label>
+        <div class="field-span-2 inline-check-field">
+          <span>Status</span>
+          <input type="hidden" name="is_paid" value="false">
+          <label class="inline-check-card">
+            <input type="checkbox" name="is_paid" value="true" ${editing?.is_paid ? "checked" : ""}>
+            <div>
+              <strong>Pago</strong>
+              <small>Marque quando o boleto já tiver sido quitado.</small>
+            </div>
+          </label>
+        </div>
+        <label class="field-span-2">
+          <span>Observações</span>
+          <textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea>
+        </label>
+        <div class="form-actions field-span-2">
+          <button type="submit" class="btn btn-primary">${editing ? "Salvar boleto" : "Cadastrar boleto"}</button>
+          <button type="button" class="btn btn-secondary" data-action="clear-bills-form">Limpar formulário</button>
+        </div>
+      </form>
+    </article>
 
     ${renderPeriodToolbar("bills", {
       showSearch: true,
@@ -4096,53 +4139,7 @@ function renderBillsPage() {
 
     <div data-search-results-scope="bills" data-search-results-part="metrics">${renderBillsMetricsSection()}</div>
     <div data-search-results-scope="bills" data-search-results-part="dashboard">${renderBillsDashboardSection()}</div>
-
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>${editing ? "Editar boleto" : "Novo boleto"}</h3>
-            <p>${editing ? "Atualize beneficiário, vencimento, valor e status do boleto selecionado." : "Cadastre boletos manualmente e marque como pago quando necessário."}</p>
-          </div>
-        </div>
-        <form id="bills-form" class="form-grid">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
-          ${renderFormFeedback("bills")}
-          <label class="field-span-2">
-            <span>Beneficiário</span>
-            <input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" required>
-          </label>
-          <label>
-            <span>Data do vencimento</span>
-            <input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required>
-          </label>
-          <label>
-            <span>Valor</span>
-            ${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}
-          </label>
-          <div class="field-span-2 inline-check-field">
-            <span>Status</span>
-            <input type="hidden" name="is_paid" value="false">
-            <label class="inline-check-card">
-              <input type="checkbox" name="is_paid" value="true" ${editing?.is_paid ? "checked" : ""}>
-              <div>
-                <strong>Pago</strong>
-                <small>Marque quando o boleto já tiver sido quitado.</small>
-              </div>
-            </label>
-          </div>
-          <label class="field-span-2">
-            <span>Observações</span>
-            <textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea>
-          </label>
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar boleto" : "Cadastrar boleto"}</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-bills-form">Limpar formulário</button>
-          </div>
-        </form>
-      </article>
-      <div data-search-results-scope="bills" data-search-results-part="list">${renderBillsListPanel()}</div>
-    </section>
+    <div data-search-results-scope="bills" data-search-results-part="list">${renderBillsListPanel()}</div>
   `;
 }
 
@@ -4156,6 +4153,30 @@ function renderChecksPage() {
       "Acompanhe pendências, compensações e atrasos com destaque visual, usando a data prevista para filtros e resumos.",
     )}
 
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>${editing ? "Editar cheque" : "Novo cheque"}</h3>
+          <p>${editing ? "Atualize o cheque selecionado." : "Cadastre os cheques emitidos pela loja."}</p>
+        </div>
+      </div>
+      <form id="checks-form" class="form-grid">
+        <input type="hidden" name="id" value="${editing?.id ?? ""}">
+        ${renderFormFeedback("checks")}
+        <label><span>Número do cheque</span><input type="text" name="check_number" value="${escapeHtml(toFormValue(editing?.check_number))}" required></label>
+        <label><span>Beneficiário</span><input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" required></label>
+        <label><span>Valor</span>${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}</label>
+        <label><span>Data de emissão</span><input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required></label>
+        <label><span>Data prevista</span><input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required></label>
+        <label><span>Status</span><select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select></label>
+        <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
+        <div class="form-actions field-span-2">
+          <button type="submit" class="btn btn-primary">${editing ? "Salvar cheque" : "Cadastrar cheque"}</button>
+          <button type="button" class="btn btn-secondary" data-action="clear-checks-form">Limpar formulário</button>
+        </div>
+      </form>
+    </article>
+
     ${renderPeriodToolbar("checks", {
       showSearch: true,
       searchPlaceholder: "Buscar por número, beneficiário ou observação",
@@ -4166,33 +4187,7 @@ function renderChecksPage() {
 
     <div data-search-results-scope="checks" data-search-results-part="metrics">${renderChecksMetricsSection()}</div>
     <div data-search-results-scope="checks" data-search-results-part="dashboard">${renderChecksDashboardSection()}</div>
-
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>${editing ? "Editar cheque" : "Novo cheque"}</h3>
-            <p>${editing ? "Atualize o cheque selecionado." : "Cadastre os cheques emitidos pela loja."}</p>
-          </div>
-        </div>
-        <form id="checks-form" class="form-grid">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
-          ${renderFormFeedback("checks")}
-          <label><span>Número do cheque</span><input type="text" name="check_number" value="${escapeHtml(toFormValue(editing?.check_number))}" required></label>
-          <label><span>Beneficiário</span><input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" required></label>
-          <label><span>Valor</span>${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}</label>
-          <label><span>Data de emissão</span><input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required></label>
-          <label><span>Data prevista</span><input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required></label>
-          <label><span>Status</span><select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select></label>
-          <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar cheque" : "Cadastrar cheque"}</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-checks-form">Limpar formulário</button>
-          </div>
-        </form>
-      </article>
-      <div data-search-results-scope="checks" data-search-results-part="list">${renderChecksListPanel()}</div>
-    </section>
+    <div data-search-results-scope="checks" data-search-results-part="list">${renderChecksListPanel()}</div>
   `;
 }
 
