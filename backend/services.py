@@ -2069,7 +2069,6 @@ def get_bootstrap_data() -> dict[str, Any]:
         "quotes": list_quotes(),
         "expenses": list_expenses(),
         "checks": list_checks(),
-        "stock_movements": list_stock_movements(),
         "stock_overview": get_stock_overview(),
         "nfe_issued": list_nfe_issued(),
         "fiscal_settings": get_fiscal_settings(),

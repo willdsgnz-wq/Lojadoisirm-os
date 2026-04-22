@@ -216,12 +216,9 @@ def api_products_export() -> Response:
     )
 
 
-@app.route("/api/stock/movements", methods=["GET", "POST"])
-def api_stock_movements() -> Response:
+@app.post("/api/stock/entries")
+def api_stock_entries() -> Response:
     user = _require_user()
-    if request.method == "GET":
-        return _json_response({"items": services.list_stock_movements()})
-
     payload = request.get_json(silent=True) or {}
     payload["_user_id"] = user["id"]
     item = services.create_stock_movement(payload)

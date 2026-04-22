@@ -33,10 +33,8 @@ const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3
 const SIDEBAR_MOBILE_QUERY = window.matchMedia("(max-width: 960px)");
 
 const pageTitles = {
-  dashboard: "Dashboard",
   products: "Produtos",
   stock: "Estoque",
-  movements: "Movimentações",
   customers: "Clientes",
   sales: "Vendas",
   quotes: "Orçamentos",
@@ -56,7 +54,7 @@ const monthStart = (() => {
 
 const state = {
   user: null,
-  page: "dashboard",
+  page: "sales",
   pwa: {
     deferredPrompt: null,
     installReady: false,
@@ -81,7 +79,6 @@ const state = {
     quotes: [],
     expenses: [],
     checks: [],
-    stock_movements: [],
     stock_overview: {
       total_products: 0,
       low_stock_products: 0,
@@ -127,10 +124,8 @@ const state = {
     draft: null,
   },
   filters: {
-    dashboard: { preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
     products: { search: "", category: "", active_filter: "active", page: 1 },
     stock: { search: "", stock_filter: "" },
-    movements: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", movement_type: "" },
     customers: { search: "" },
     sales: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
     quotes: { search: "", status: "" },
@@ -831,7 +826,6 @@ async function loadData() {
     quotes: payload.quotes || [],
     expenses: payload.expenses || [],
     checks: payload.checks || [],
-    stock_movements: payload.stock_movements || [],
     stock_overview: payload.stock_overview || state.data.stock_overview,
     nfe_issued: payload.nfe_issued || [],
     fiscal_settings: payload.fiscal_settings || {},
@@ -855,23 +849,9 @@ function setPage(page) {
 
 
 function renderCurrentPage() {
-  elements.pageTitle.textContent = pageTitles[state.page] || "Sistema";
-  document.title = `${BRAND_NAME} | ${pageTitles[state.page] || "Sistema"}`;
-  elements.navLinks.forEach((link) => {
-    const isActive = link.dataset.page === state.page;
-    link.classList.toggle("active", isActive);
-    if (isActive) {
-      link.setAttribute("aria-current", "page");
-    } else {
-      link.removeAttribute("aria-current");
-    }
-  });
-
   const renderMap = {
-    dashboard: renderDashboardPage,
     products: renderProductsPage,
     stock: renderStockPage,
-    movements: renderMovementsPage,
     customers: renderCustomersPage,
     sales: renderSalesPage,
     quotes: renderQuotesPage,
@@ -881,8 +861,25 @@ function renderCurrentPage() {
     reports: renderReportsPage,
   };
 
+  const activePage = renderMap[state.page] ? state.page : "sales";
+  if (activePage !== state.page) {
+    state.page = activePage;
+  }
+
+  elements.pageTitle.textContent = pageTitles[activePage] || "Sistema";
+  document.title = `${BRAND_NAME} | ${pageTitles[activePage] || "Sistema"}`;
+  elements.navLinks.forEach((link) => {
+    const isActive = link.dataset.page === activePage;
+    link.classList.toggle("active", isActive);
+    if (isActive) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+
   const template = document.createElement("template");
-  template.innerHTML = renderMap[state.page]();
+  template.innerHTML = renderMap[activePage]();
 
   elements.pageContent.replaceChildren(template.content);
 
@@ -915,9 +912,6 @@ function getSearchResultsMarkup(scope, part = "default") {
     },
     stock: {
       default: renderStockResultsTable,
-    },
-    movements: {
-      default: renderMovementsResultsContent,
     },
     customers: {
       default: renderCustomersListResults,
@@ -2149,159 +2143,6 @@ function getMetricsGridClass(count) {
 }
 
 
-function renderDashboardPage() {
-  const sales = state.data.sales;
-  const expenses = state.data.expenses;
-  const checks = state.data.checks;
-  const products = getActiveProducts();
-
-  const todaySales = filterByPeriod(sales, "sale_date", getPresetRange("today"));
-  const yesterdaySales = filterByPeriod(sales, "sale_date", getPresetRange("yesterday"));
-  const weekSales = filterByPeriod(sales, "sale_date", getPresetRange("week"));
-  const monthSales = filterByPeriod(sales, "sale_date", getPresetRange("month"));
-  const yearSales = filterByPeriod(sales, "sale_date", getPresetRange("year"));
-
-  const dashboardPeriod = getPeriod("dashboard");
-  const salesInPeriod = filterByPeriod(sales, "sale_date", dashboardPeriod);
-  const shiftSummary = getSalesShiftSummary(salesInPeriod);
-  const recentSales = sortByDateDesc(salesInPeriod, "sale_date").slice(0, 6);
-  const productRanking = getProductRanking(salesInPeriod.length ? salesInPeriod : sales, 5);
-  const paymentTotals = getPaymentTotals(salesInPeriod.length ? salesInPeriod : sales, "payment_method", "total_amount");
-  const dailyChart = groupByDay(sales, "sale_date", (sale) => sale.total_amount, 7);
-  const weeklyChart = groupByWeek(sales, "sale_date", (sale) => sale.total_amount, 8);
-  const monthlyChart = groupByMonth(sales, "sale_date", (sale) => sale.total_amount, 6);
-
-  const lowStock = products.filter((product) => product.low_stock);
-  const pendingChecks = checks.filter((check) => check.effective_status === "Pendente");
-  const overdueChecks = checks.filter((check) => check.effective_status === "Atrasado");
-  const recentExpenses = sortByDateDesc(expenses, "payment_date").slice(0, 5);
-
-  const expenseMonthValue = sumBy(filterByPeriod(expenses, "payment_date", getPresetRange("month")), (expense) => expense.amount);
-  const checksPendingValue = sumBy(pendingChecks, (check) => check.amount);
-  const checksOverdueValue = sumBy(overdueChecks, (check) => check.amount);
-  const periodSalesSummary = getSalesPeriodGroups(salesInPeriod);
-
-  return `
-    ${renderHero(
-      BRAND_NAME,
-      "Aqui você acompanha vendas, alertas importantes, estoque baixo e movimentações recentes em um único lugar.",
-      `
-        <div class="hero-summary">
-          <div>
-            <span>Venda no filtro</span>
-            <strong>${formatMoney(periodSalesSummary.total)}</strong>
-          </div>
-          <div>
-            <span>Contas pagas no mês</span>
-            <strong>${formatMoney(expenseMonthValue)}</strong>
-          </div>
-        </div>
-      `,
-    )}
-
-    ${renderPeriodToolbar("dashboard")}
-
-    <section class="metrics-grid metrics-grid-5">
-      ${renderMetricCard({ label: "Vendido hoje", value: formatMoney(sumBy(todaySales, (sale) => sale.total_amount)), helper: `${todaySales.length} venda(s)`, tone: "success" })}
-      ${renderMetricCard({ label: "Vendido ontem", value: formatMoney(sumBy(yesterdaySales, (sale) => sale.total_amount)), helper: `${yesterdaySales.length} venda(s)` })}
-      ${renderMetricCard({ label: "Na semana", value: formatMoney(sumBy(weekSales, (sale) => sale.total_amount)), helper: `${weekSales.length} venda(s)`, tone: "brand" })}
-      ${renderMetricCard({ label: "No mês", value: formatMoney(sumBy(monthSales, (sale) => sale.total_amount)), helper: `${monthSales.length} venda(s)` })}
-      ${renderMetricCard({ label: "No ano", value: formatMoney(sumBy(yearSales, (sale) => sale.total_amount)), helper: `${yearSales.length} venda(s)` })}
-    </section>
-
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Vendas da manhã", value: formatMoney(shiftSummary.totalMorning), helper: `${shiftSummary.countMorning} venda(s)`, tone: "brand" })}
-      ${renderMetricCard({ label: "Vendas da tarde", value: formatMoney(shiftSummary.totalAfternoon), helper: `${shiftSummary.countAfternoon} venda(s)` })}
-      ${renderMetricCard({ label: "Total do filtro", value: formatMoney(shiftSummary.total), helper: dashboardPeriod.label, tone: "success" })}
-      ${renderMetricCard({ label: "Quantidade no filtro", value: formatNumber(shiftSummary.count), helper: "Vendas registradas" })}
-    </section>
-
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Estoque baixo", value: formatNumber(lowStock.length), helper: "Produtos com atenção", tone: lowStock.length ? "danger" : "success" })}
-      ${renderMetricCard({ label: "Cheques pendentes", value: formatMoney(checksPendingValue), helper: `${pendingChecks.length} registro(s)`, tone: "warning" })}
-      ${renderMetricCard({ label: "Cheques atrasados", value: formatMoney(checksOverdueValue), helper: `${overdueChecks.length} registro(s)`, tone: overdueChecks.length ? "danger" : "success" })}
-      ${renderMetricCard({ label: "Contas pagas recentes", value: formatNumber(recentExpenses.length), helper: "Últimos lançamentos" })}
-    </section>
-
-    <section class="dashboard-grid">
-      ${renderBarChart({ title: "Vendas diárias", subtitle: "Últimos 7 dias", data: dailyChart })}
-      ${renderBarChart({ title: "Vendas por semana", subtitle: "Últimas 8 semanas", data: weeklyChart })}
-      ${renderBarChart({ title: "Vendas por mês", subtitle: "Últimos 6 meses", data: monthlyChart })}
-      ${renderStatList({ title: "Formas de pagamento", subtitle: dashboardPeriod.label, rows: paymentTotals })}
-      ${renderStatList({
-        title: "Produtos mais vendidos",
-        subtitle: "Ranking simples por quantidade",
-        rows: productRanking.map((item) => ({ label: item.label, value: item.revenue, helper: `${formatNumber(item.quantity)} item(ns)` })),
-      })}
-    </section>
-
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Vendas recentes</h3>
-            <p>${dashboardPeriod.label}</p>
-          </div>
-        </div>
-        ${recentSales.length ? `
-          <div class="table-wrapper">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Hora</th>
-                  <th>Período</th>
-                  <th>Pagamento</th>
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${recentSales.map((sale) => `
-                  <tr>
-                    <td>${formatDate(sale.sale_date)}</td>
-                    <td>${escapeHtml(sale.sale_time || "-")}</td>
-                    <td>${renderBadge(resolveSalePeriod(sale), statusTone(resolveSalePeriod(sale)))}</td>
-                    <td>${escapeHtml(sale.payment_method)}</td>
-                    <td>${formatMoney(sale.total_amount)}</td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        ` : renderEmptyState("Sem vendas no filtro", "Ajuste o período para visualizar outras movimentações.")}
-      </article>
-
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Alertas</h3>
-            <p>Pontos que merecem atenção</p>
-          </div>
-        </div>
-        <div class="alert-stack">
-          <div class="alert-card">
-            <strong>Estoque baixo</strong>
-            <p>${lowStock.length ? `${lowStock.length} produto(s) abaixo do mínimo.` : "Nenhum produto com estoque abaixo do mínimo."}</p>
-          </div>
-          <div class="alert-card warning">
-            <strong>Cheques pendentes</strong>
-            <p>${pendingChecks.length ? `${pendingChecks.length} cheque(s) ainda aguardando compensação.` : "Nenhum cheque pendente."}</p>
-          </div>
-          <div class="alert-card danger">
-            <strong>Cheques atrasados</strong>
-            <p>${overdueChecks.length ? `${overdueChecks.length} cheque(s) em atraso.` : "Nenhum cheque atrasado."}</p>
-          </div>
-          <div class="alert-card success">
-            <strong>Contas pagas recentes</strong>
-            <p>${recentExpenses.length ? `${recentExpenses.length} despesa(s) recentes lançadas.` : "Nenhuma conta paga recente."}</p>
-          </div>
-        </div>
-      </article>
-    </section>
-  `;
-}
-
-
 function getFilteredProductsBase() {
   const search = state.filters.products.search;
   const categoryFilter = state.filters.products.category;
@@ -2418,85 +2259,6 @@ function renderStockResultsTable() {
       </table>
     </div>
   ` : renderEmptyState("Nenhum produto encontrado", "Ajuste a busca ou o filtro do saldo atual.");
-}
-
-
-function getFilteredMovementsData() {
-  const filter = state.filters.movements;
-  const period = getPeriod("movements");
-  let movements = filterByPeriod(state.data.stock_movements, "movement_date", period);
-  movements = getSimpleSearchRecords(movements, ["product_name", "product_sku", "reason", "document_reference"], filter.search);
-  if (filter.movement_type) {
-    movements = movements.filter((item) => item.movement_type === filter.movement_type);
-  }
-
-  return {
-    period,
-    movements,
-    chartData: groupByDay(movements, "movement_date", (item) => Math.abs(Number(item.quantity || 0)), 7),
-  };
-}
-
-
-function renderMovementsResultsContent() {
-  const { period, movements, chartData } = getFilteredMovementsData();
-
-  return `
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Movimentações", value: formatNumber(movements.length), helper: period.label })}
-      ${renderMetricCard({ label: "Entradas", value: formatNumber(movements.filter((item) => item.movement_type === "ENTRADA").length), helper: "Reposições e estornos", tone: "success" })}
-      ${renderMetricCard({ label: "Saídas", value: formatNumber(movements.filter((item) => item.movement_type === "SAIDA").length), helper: "Baixas e vendas", tone: "warning" })}
-      ${renderMetricCard({ label: "Ajustes", value: formatNumber(movements.filter((item) => item.movement_type === "AJUSTE").length), helper: "Inventário", tone: "brand" })}
-    </section>
-
-    <section class="dashboard-grid">
-      ${renderBarChart({ title: "Quantidade movimentada por dia", subtitle: "Últimos 7 dias do filtro", data: chartData, format: "count" })}
-    </section>
-
-    <section class="panel">
-      <div class="section-header">
-        <div>
-          <h3>Histórico de movimentações</h3>
-          <p>${period.label}</p>
-        </div>
-      </div>
-      ${movements.length ? `
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Produto</th>
-                <th>Tipo</th>
-                <th>Quantidade</th>
-                <th>Antes</th>
-                <th>Depois</th>
-                <th>Documento</th>
-                <th>Motivo</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${movements.map((movement) => `
-                <tr>
-                  <td>${formatDate(movement.movement_date)}</td>
-                  <td>
-                    <strong>${escapeHtml(movement.product_name)}</strong>
-                    <small>${escapeHtml(movement.product_sku)}</small>
-                  </td>
-                  <td>${renderBadge(movement.movement_type, statusTone(movement.movement_type))}</td>
-                  <td>${formatNumber(movement.quantity)}</td>
-                  <td>${formatNumber(movement.balance_before)}</td>
-                  <td>${formatNumber(movement.balance_after)}</td>
-                  <td>${escapeHtml(movement.document_reference || "-")}</td>
-                  <td>${escapeHtml(movement.reason || "-")}</td>
-                </tr>
-              `).join("")}
-            </tbody>
-          </table>
-        </div>
-      ` : renderEmptyState("Sem movimentações no período", "Cadastre entradas, saídas ou ajustes para montar o histórico.")}
-    </section>
-  `;
 }
 
 
@@ -3089,36 +2851,6 @@ function renderStockPage() {
         <div data-search-results-scope="stock">${renderStockResultsTable()}</div>
       </article>
     </section>
-  `;
-}
-
-
-function renderMovementsPage() {
-  const filter = state.filters.movements;
-
-  return `
-    ${renderHero(
-      "Movimentações de estoque",
-      "Histórico completo das entradas, saídas e ajustes manuais, com documento de referência e saldo antes/depois.",
-    )}
-
-    ${renderPeriodToolbar("movements", {
-      showSearch: true,
-      searchPlaceholder: "Buscar por produto, SKU, motivo ou documento",
-    })}
-
-    <section class="panel toolbar-panel" data-filter-scope="movements">
-      <div class="toolbar-row">
-        <label class="toolbar-field">
-          <span>Tipo</span>
-          <select name="movement_type">
-            <option value="">Todos</option>
-            ${(state.data.options.stock_movement_types || []).map((item) => `<option value="${item}" ${filter.movement_type === item ? "selected" : ""}>${item}</option>`).join("")}
-          </select>
-        </label>
-      </div>
-    </section>
-    <div data-search-results-scope="movements">${renderMovementsResultsContent()}</div>
   `;
 }
 
@@ -4755,7 +4487,7 @@ async function submitStockForm(form) {
 
   setFormBusy(form, true);
   try {
-    await api.post("/api/stock/movements", payload);
+    await api.post("/api/stock/entries", payload);
     setFormFeedback("stock", "Movimentação registrada com sucesso.", "success");
     showToast("Movimentação registrada com sucesso.");
     form.reset();
