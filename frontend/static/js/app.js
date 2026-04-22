@@ -48,6 +48,18 @@ const pageTitles = {
 const BRAND_LOGO_PATH = "/assets/brand/logo_dois_irmaos_final.png";
 const PRODUCTS_PER_PAGE = 10;
 const SALES_HISTORY_PER_PAGE = 5;
+const PRODUCT_ORIGIN_OPTIONS = [
+  { value: "0", label: "0 - Nacional" },
+  { value: "1", label: "1 - Estrangeira (importação direta)" },
+  { value: "2", label: "2 - Estrangeira (mercado interno)" },
+  { value: "3", label: "3 - Nacional com conteúdo importado > 40%" },
+  { value: "4", label: "4 - Nacional em conformidade com PPB" },
+  { value: "5", label: "5 - Nacional com conteúdo importado <= 40%" },
+  { value: "6", label: "6 - Estrangeira sem similar nacional (importação direta)" },
+  { value: "7", label: "7 - Estrangeira sem similar nacional (mercado interno)" },
+  { value: "8", label: "8 - Nacional com conteúdo importado > 70%" },
+];
+const PRODUCT_CSOSN_OPTIONS = ["101", "102", "103", "201", "202", "203", "300", "400", "500", "900"];
 
 const monthStart = (() => {
   const now = new Date();
@@ -131,7 +143,18 @@ const state = {
     draft: null,
   },
   filters: {
-    products: { search: "", category: "", active_filter: "active", page: 1 },
+    products: {
+      search: "",
+      category: "",
+      active_filter: "active",
+      stock_filter: "",
+      price_min: "",
+      price_max: "",
+      quick_filter: "",
+      show_advanced: false,
+      page: 1,
+      per_page: PRODUCTS_PER_PAGE,
+    },
     stock: { search: "", stock_filter: "" },
     customers: { search: "" },
     sales: {
@@ -238,6 +261,9 @@ function bindGlobalEvents() {
   elements.pageContent.addEventListener("submit", handlePageSubmit, true);
   elements.pageContent.addEventListener("change", handlePageChange);
   elements.pageContent.addEventListener("input", handlePageInput);
+  elements.pageContent.addEventListener("dragover", handlePageDragOver);
+  elements.pageContent.addEventListener("dragleave", handlePageDragLeave);
+  elements.pageContent.addEventListener("drop", handlePageDrop);
   document.addEventListener("click", handleDocumentClick);
   document.addEventListener("keydown", handleGlobalKeyDown);
   window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
@@ -927,6 +953,9 @@ function renderCurrentPage() {
   if (quotesForm) updateQuoteTotals(quotesForm);
   const salesForm = document.getElementById("sales-form");
   if (salesForm) updateSaleTotals(salesForm);
+  const productsForm = document.getElementById("products-form");
+  if (productsForm) initializeProductsForm(productsForm);
+  updateProductsImportSelection();
   updateInstallButtonVisibility();
 }
 
@@ -2201,74 +2230,365 @@ function getMetricsGridClass(count) {
 }
 
 
-function getFilteredProductsBase() {
-  const search = state.filters.products.search;
-  const categoryFilter = state.filters.products.category;
-  const activeFilter = state.filters.products.active_filter || "active";
+function formatDecimalInput(value, digits = 2) {
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericValue)) return "0";
+  return numericValue.toFixed(digits).replace(/\.?0+$/, "");
+}
 
-  return getSimpleSearchRecords(
+
+function calculateProductMarginPercent(costPrice, salePrice) {
+  const cost = Number(costPrice || 0);
+  const sale = Number(salePrice || 0);
+  if (!Number.isFinite(cost) || cost <= 0 || !Number.isFinite(sale)) return 0;
+  return ((sale - cost) / cost) * 100;
+}
+
+
+function calculateProductSalePrice(costPrice, marginPercent) {
+  const cost = Number(costPrice || 0);
+  const margin = Number(marginPercent || 0);
+  if (!Number.isFinite(cost) || !Number.isFinite(margin)) return 0;
+  return cost * (1 + margin / 100);
+}
+
+
+function buildProductSalesStats() {
+  const stats = new Map();
+  (state.data.sales || []).forEach((sale) => {
+    (sale.items || []).forEach((item) => {
+      const productId = Number(item.product_id || 0);
+      if (!productId) return;
+      const current = stats.get(productId) || { quantity: 0, revenue: 0, count: 0 };
+      current.quantity += Number(item.quantity || 0);
+      current.revenue += Number(item.total_price || 0);
+      current.count += 1;
+      stats.set(productId, current);
+    });
+  });
+  return stats;
+}
+
+
+function renderProductsIcon(name) {
+  const icons = {
+    csv: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h7l4.5 4.5V19A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"></path>
+        <path d="M14 3.5V8h4.5"></path>
+        <path d="M8.5 14h7"></path>
+        <path d="M8.5 17h5"></path>
+      </svg>
+    `,
+    excel: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h7l4.5 4.5V19A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"></path>
+        <path d="M14 3.5V8h4.5"></path>
+        <path d="m8.5 13.5 5 5"></path>
+        <path d="m13.5 13.5-5 5"></path>
+      </svg>
+    `,
+    active: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.5 19 7.5v9L12 20.5 5 16.5v-9z"></path>
+        <path d="M5 7.5 12 11.5l7-4"></path>
+        <path d="M12 11.5v9"></path>
+      </svg>
+    `,
+    inactive: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.5 19 7.5v9L12 20.5 5 16.5v-9z"></path>
+        <path d="m8 8 8 8"></path>
+      </svg>
+    `,
+    warning: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4 20 19.5H4L12 4Z"></path>
+        <path d="M12 9v4.5"></path>
+        <circle cx="12" cy="16.8" r=".8"></circle>
+      </svg>
+    `,
+    money: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5"></circle>
+        <path d="M12 7.2v9.6"></path>
+        <path d="M14.9 9.5c-.36-.82-1.1-1.5-2.46-1.5-1.46 0-2.44.78-2.44 1.92 0 .99.63 1.54 2.18 1.88l1.07.24c1.88.41 2.8 1.24 2.8 2.66 0 1.66-1.45 2.91-3.66 2.91-1.79 0-3.06-.7-3.7-2"></path>
+      </svg>
+    `,
+    filters: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16"></path>
+        <path d="M7 12h10"></path>
+        <path d="M10 17h4"></path>
+      </svg>
+    `,
+    basic: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5.5" width="15" height="13" rx="2"></rect>
+        <path d="M8 10h8"></path>
+        <path d="M8 14h5"></path>
+      </svg>
+    `,
+    pricing: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.5v17"></path>
+        <path d="M16.2 7.5c-.46-1.1-1.46-1.9-3.08-1.9-1.78 0-3 .95-3 2.32 0 1.18.76 1.85 2.67 2.28l1.31.29c2.22.49 3.32 1.46 3.32 3.11 0 1.94-1.67 3.4-4.2 3.4-2.06 0-3.51-.81-4.23-2.42"></path>
+      </svg>
+    `,
+    fiscal: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h7l4.5 4.5V19A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"></path>
+        <path d="M14 3.5V8h4.5"></path>
+        <path d="M8.5 12h7"></path>
+        <path d="M8.5 15.5h7"></path>
+      </svg>
+    `,
+    upload: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 15V6.5"></path>
+        <path d="m8.5 10 3.5-3.5L15.5 10"></path>
+        <path d="M5 16.5v2A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-2"></path>
+      </svg>
+    `,
+    edit: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m4 20 4.3-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path>
+        <path d="m13 6 4 4"></path>
+      </svg>
+    `,
+    duplicate: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+        <path d="M5.5 15.5h-1A2 2 0 0 1 2.5 13.5v-9a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    `,
+    delete: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 7.5h15"></path>
+        <path d="M9.5 3.5h5"></path>
+        <path d="M7.5 7.5v11a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5v-11"></path>
+      </svg>
+    `,
+  };
+  return icons[name] || icons.basic;
+}
+
+
+function renderProductsOverviewCard({ icon, eyebrow, value, helper, tone = "default" }) {
+  return `
+    <article class="products-overview-card products-overview-${tone}">
+      <div class="products-overview-icon" aria-hidden="true">${renderProductsIcon(icon)}</div>
+      <div class="products-overview-copy">
+        <span>${escapeHtml(eyebrow)}</span>
+        <strong>${escapeHtml(String(value))}</strong>
+        <small>${escapeHtml(helper)}</small>
+      </div>
+    </article>
+  `;
+}
+
+
+function renderProductsTableActions(product) {
+  return `
+    <div class="table-actions product-table-actions">
+      <button type="button" class="table-action icon-only" data-action="edit-product" data-id="${product.id}" title="Editar produto" aria-label="Editar produto">
+        ${renderProductsIcon("edit")}
+      </button>
+      <button type="button" class="table-action icon-only" data-action="duplicate-product" data-id="${product.id}" title="Duplicar produto" aria-label="Duplicar produto">
+        ${renderProductsIcon("duplicate")}
+      </button>
+      <button type="button" class="table-action icon-only danger" data-action="delete-product" data-id="${product.id}" title="Excluir produto" aria-label="Excluir produto">
+        ${renderProductsIcon("delete")}
+      </button>
+    </div>
+  `;
+}
+
+
+function renderProductStatusBadge(product) {
+  if (product.active === false) {
+    return renderBadge("Inativo", "neutral");
+  }
+  if (product.out_of_stock) {
+    return renderBadge("Crítico", "danger");
+  }
+  if (product.low_stock) {
+    return renderBadge("Estoque baixo", "warning");
+  }
+  return renderBadge("Normal", "success");
+}
+
+
+function renderProductOriginOptions(selectedValue = "") {
+  const currentValue = String(selectedValue || "");
+  const options = [...PRODUCT_ORIGIN_OPTIONS];
+  if (currentValue && !options.some((item) => item.value === currentValue)) {
+    options.unshift({ value: currentValue, label: currentValue });
+  }
+  return `
+    <option value="">Selecione</option>
+    ${options.map((item) => `<option value="${item.value}" ${item.value === currentValue ? "selected" : ""}>${escapeHtml(item.label)}</option>`).join("")}
+  `;
+}
+
+
+function renderProductCsosnOptions(selectedValue = "") {
+  const currentValue = String(selectedValue || "");
+  const options = [...PRODUCT_CSOSN_OPTIONS];
+  if (currentValue && !options.includes(currentValue)) {
+    options.unshift(currentValue);
+  }
+  return `
+    <option value="">Selecione</option>
+    ${options.map((item) => `<option value="${item}" ${item === currentValue ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}
+  `;
+}
+
+
+function renderProductQuickChip(value, label, active) {
+  return `
+    <button
+      type="button"
+      class="products-chip ${active ? "active" : ""}"
+      data-action="products-quick-filter"
+      data-filter-value="${value}"
+      aria-pressed="${active ? "true" : "false"}"
+    >
+      ${escapeHtml(label)}
+    </button>
+  `;
+}
+
+
+function getFilteredProductsBase() {
+  const filter = state.filters.products;
+  const salesStats = buildProductSalesStats();
+  const search = filter.search;
+  const categoryFilter = filter.category;
+  const activeFilter = filter.active_filter || "active";
+  const stockFilter = filter.stock_filter || "";
+  const quickFilter = filter.quick_filter || "";
+  const priceMin = filter.price_min === "" ? null : Number(filter.price_min || 0);
+  const priceMax = filter.price_max === "" ? null : Number(filter.price_max || 0);
+
+  let products = getSimpleSearchRecords(
     state.data.products,
     ["name", "sku", "code", "category", "description", "ncm"],
     search,
-  ).filter((product) => {
+  ).map((product) => {
+    const stats = salesStats.get(Number(product.id)) || { quantity: 0, revenue: 0, count: 0 };
+    return {
+      ...product,
+      sold_quantity: stats.quantity,
+      sold_revenue: stats.revenue,
+      sale_count: stats.count,
+      has_sales: stats.quantity > 0,
+    };
+  }).filter((product) => {
     if (categoryFilter && product.category !== categoryFilter) return false;
-    if (activeFilter === "active") return product.active !== false;
-    if (activeFilter === "inactive") return product.active === false;
+    if (activeFilter === "active" && product.active === false) return false;
+    if (activeFilter === "inactive" && product.active !== false) return false;
+    if (stockFilter === "low" && !product.low_stock) return false;
+    if (stockFilter === "empty" && !product.out_of_stock) return false;
+    if (stockFilter === "normal" && (product.low_stock || product.out_of_stock)) return false;
+    if (priceMin !== null && Number(product.sale_price || 0) < priceMin) return false;
+    if (priceMax !== null && Number(product.sale_price || 0) > priceMax) return false;
+    if (quickFilter === "low_stock" && !product.low_stock) return false;
+    if (quickFilter === "out_of_stock" && !product.out_of_stock) return false;
+    if (quickFilter === "most_sold" && !product.has_sales) return false;
+    if (quickFilter === "no_sales" && product.has_sales) return false;
     return true;
   });
+
+  if (quickFilter === "most_sold") {
+    products = [...products].sort((first, second) => (
+      Number(second.sold_quantity || 0) - Number(first.sold_quantity || 0)
+    ) || String(first.name || "").localeCompare(String(second.name || "")));
+  }
+
+  return products;
 }
 
 
 function renderProductsListResults() {
-  const pagination = paginateRecords(getFilteredProductsBase(), state.filters.products.page, PRODUCTS_PER_PAGE);
+  const perPage = Number(state.filters.products.per_page || PRODUCTS_PER_PAGE);
+  const pagination = paginateRecords(getFilteredProductsBase(), state.filters.products.page, perPage);
   const products = pagination.items;
+  const pages = Array.from({ length: pagination.totalPages }, (_, index) => index + 1);
 
   return products.length ? `
-    <div class="table-wrapper">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>SKU</th>
-            <th>Produto</th>
-            <th>Categoria</th>
-            <th>NCM</th>
-            <th>Estoque</th>
-            <th>Mínimo</th>
-            <th>Venda</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${products.map((product) => `
-            <tr class="${product.low_stock ? "row-danger" : ""}">
-              <td>${escapeHtml(product.sku || product.code)}</td>
-              <td>
-                <strong>${escapeHtml(product.name)}</strong>
-                <small>${escapeHtml(`${product.unit} | CFOP ${product.cfop_default || "-"}`)}</small>
-              </td>
-              <td>${escapeHtml(product.category)}</td>
-              <td>${escapeHtml(product.ncm || "-")}</td>
-              <td>${formatNumber(product.stock_quantity)}</td>
-              <td>${formatNumber(product.min_stock)}</td>
-              <td>${formatMoney(product.sale_price)}</td>
-              <td>
-                ${product.active === false
-                  ? renderBadge("Inativo", "neutral")
-                  : (product.low_stock ? renderBadge("Estoque baixo", "danger") : renderBadge("Ativo", "success"))}
-              </td>
-              <td>${renderTableActions("product", product.id)}</td>
+    <div class="products-table-shell">
+      <div class="table-wrapper products-table-wrapper">
+        <table class="data-table products-data-table">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Produto</th>
+              <th>Categoria</th>
+              <th>Estoque</th>
+              <th>Mínimo</th>
+              <th>Venda (R$)</th>
+              <th>Status</th>
+              <th></th>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${products.map((product) => `
+              <tr class="${product.out_of_stock ? "row-danger" : product.low_stock ? "row-warning" : ""}">
+                <td>
+                  <strong>${escapeHtml(product.sku || product.code)}</strong>
+                  <small>${escapeHtml(product.ncm || "NCM não informado")}</small>
+                </td>
+                <td>
+                  <strong>${escapeHtml(product.name)}</strong>
+                  <small>${escapeHtml(`${product.unit} • CFOP ${product.cfop_default || "-"}`)}</small>
+                </td>
+                <td>
+                  <strong>${escapeHtml(product.category)}</strong>
+                  <small>${escapeHtml(product.has_sales ? `${formatNumber(product.sold_quantity)} un. vendida(s)` : "Sem vendas registradas")}</small>
+                </td>
+                <td>${formatNumber(product.stock_quantity)}</td>
+                <td>${formatNumber(product.min_stock)}</td>
+                <td>${formatMoney(product.sale_price)}</td>
+                <td>${renderProductStatusBadge(product)}</td>
+                <td>${renderProductsTableActions(product)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="table-pagination products-table-pagination">
+        <div class="products-pagination-left">
+          <span>Mostrando ${formatNumber(products.length)} de ${formatNumber(pagination.totalItems)} produto(s)</span>
+        </div>
+        <div class="products-pagination-right">
+          <label class="products-per-page" data-filter-scope="products">
+            <span>Itens por página</span>
+            <select name="per_page">
+              ${[5, 10, 20, 30].map((value) => `<option value="${value}" ${perPage === value ? "selected" : ""}>${value}</option>`).join("")}
+            </select>
+          </label>
+          <div class="products-pagination-controls">
+            <button type="button" class="btn btn-secondary btn-compact" data-action="products-prev-page" ${pagination.page <= 1 ? "disabled" : ""}>Anterior</button>
+            <div class="products-pagination-pages">
+              ${pages.map((page) => `
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-compact products-pagination-page ${page === pagination.page ? "active" : ""}"
+                  data-action="products-go-page"
+                  data-page="${page}"
+                  ${page === pagination.page ? 'aria-current="page"' : ""}
+                >
+                  ${page}
+                </button>
+              `).join("")}
+            </div>
+            <button type="button" class="btn btn-secondary btn-compact" data-action="products-next-page" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Próxima</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="table-pagination">
-      <button type="button" class="btn btn-secondary" data-action="products-prev-page" ${pagination.page <= 1 ? "disabled" : ""}>Anterior</button>
-      <span>Página ${pagination.page} de ${pagination.totalPages} • ${pagination.totalItems} produto(s)</span>
-      <button type="button" class="btn btn-secondary" data-action="products-next-page" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Próxima</button>
-    </div>
-  ` : renderEmptyState("Nenhum produto encontrado", "Tente outro termo de busca ou cadastre um novo produto.");
+  ` : renderEmptyState("Nenhum produto encontrado", "Ajuste os filtros ou cadastre um novo item para o catálogo.");
 }
 
 
@@ -3283,120 +3603,472 @@ function renderChecksListPanel() {
 
 
 function renderProductsPage() {
-  const search = state.filters.products.search;
-  const categoryFilter = state.filters.products.category;
-  const activeFilter = state.filters.products.active_filter || "active";
+  const filter = state.filters.products;
   const editing = state.editing.products;
   const categories = [...new Set(state.data.products.map((product) => product.category).filter(Boolean))].sort();
   const activeProducts = getActiveProducts();
   const totalSaleValue = sumBy(activeProducts, (product) => product.stock_quantity * product.sale_price);
+  const lowStockCount = activeProducts.filter((product) => product.low_stock).length;
+  const inactiveCount = state.data.products.filter((product) => product.active === false).length;
+  const currentMargin = calculateProductMarginPercent(editing?.cost_price ?? 0, editing?.sale_price ?? 0);
+  const showAdvancedFilters = Boolean(
+    filter.show_advanced
+    || filter.stock_filter
+    || filter.price_min !== ""
+    || filter.price_max !== ""
+  );
+  const duplicateSku = String(editing?.sku || editing?.code || "").trim().toLowerCase();
+  const hasDuplicateSku = Boolean(
+    duplicateSku
+    && state.data.products.some((product) => (
+      String(product.id) !== String(editing?.id ?? "")
+      && String(product.sku || product.code || "").trim().toLowerCase() === duplicateSku
+    )),
+  );
+  const defaultPerPage = Number(filter.per_page || PRODUCTS_PER_PAGE);
+  const resetButtonLabel = editing ? "Salvar alterações" : "Salvar produto";
 
   return `
-    ${renderHero(
-      "Cadastro de produtos",
-      "Catálogo técnico da loja com SKU, dados fiscais, filtros, importação de planilha e controle de ativo/inativo.",
-      `
-        <div class="hero-actions hero-actions-wrap">
-          <a class="btn btn-secondary" href="/api/products/export?format=csv" target="_blank" rel="noreferrer">Exportar CSV</a>
-          <a class="btn btn-secondary" href="/api/products/export?format=xlsx" target="_blank" rel="noreferrer">Exportar Excel</a>
-        </div>
-      `,
-    )}
-
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Produtos ativos", value: formatNumber(activeProducts.length), helper: "Base operacional" })}
-      ${renderMetricCard({ label: "Inativos", value: formatNumber(state.data.products.filter((product) => product.active === false).length), helper: "Ocultos para venda" })}
-      ${renderMetricCard({ label: "Estoque baixo", value: formatNumber(activeProducts.filter((product) => product.low_stock).length), helper: "Itens abaixo do mínimo", tone: "danger" })}
-      ${renderMetricCard({ label: "Valor de venda em estoque", value: formatMoney(totalSaleValue), helper: "Estimativa pelo preço de venda", tone: "brand" })}
+    <section class="products-hero">
+      <div class="products-hero-copy">
+        <span class="eyebrow">Catálogo comercial e fiscal</span>
+        <h2>Cadastro de produtos</h2>
+          <p>Catálogo técnico com SKU, estoque, dados fiscais, importação em planilha e filtros inteligentes para a rotina da loja.</p>
+          <div class="products-hero-highlights">
+            <span class="products-hero-pill">${formatNumber(state.data.products.length)} produto(s) cadastrados</span>
+            <span class="products-hero-pill">${formatNumber(categories.length)} categoria(s) cadastrada(s)</span>
+            <span class="products-hero-pill">${formatNumber(defaultPerPage)} itens por página</span>
+          </div>
+      </div>
+      <div class="products-hero-actions">
+        <a class="btn btn-secondary products-hero-action" href="/api/products/export?format=csv" target="_blank" rel="noreferrer">
+          <span aria-hidden="true">${renderProductsIcon("csv")}</span>
+          <span>Exportar CSV</span>
+        </a>
+        <a class="btn btn-secondary products-hero-action" href="/api/products/export?format=xlsx" target="_blank" rel="noreferrer">
+          <span aria-hidden="true">${renderProductsIcon("excel")}</span>
+          <span>Exportar Excel</span>
+        </a>
+      </div>
     </section>
 
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
+    <section class="products-overview-grid">
+      ${renderProductsOverviewCard({
+        icon: "active",
+        eyebrow: "Produtos ativos",
+        value: formatNumber(activeProducts.length),
+        helper: "Base operacional pronta para venda",
+        tone: "default",
+      })}
+      ${renderProductsOverviewCard({
+        icon: "inactive",
+        eyebrow: "Inativos",
+        value: formatNumber(inactiveCount),
+        helper: "Itens pausados ou fora do mix",
+        tone: "soft",
+      })}
+      ${renderProductsOverviewCard({
+        icon: "warning",
+        eyebrow: "Estoque baixo",
+        value: formatNumber(lowStockCount),
+        helper: "Produtos abaixo do mínimo definido",
+        tone: "warning",
+      })}
+      ${renderProductsOverviewCard({
+        icon: "money",
+        eyebrow: "Valor de venda em estoque",
+        value: formatMoney(totalSaleValue),
+        helper: "Estimativa pelo preço de venda atual",
+        tone: "brand",
+      })}
+    </section>
+
+    <section class="products-main-grid">
+      <article class="panel products-form-card">
+        <div class="products-panel-header">
           <div>
             <h3>${editing ? "Editar produto" : "Novo produto"}</h3>
-            <p>${editing ? "Atualize os dados comerciais, fiscais e de estoque do produto." : "Cadastre SKU, preços, estoque e dados fiscais do item."}</p>
+            <p>${editing ? "Ajuste dados comerciais, estoque e fiscal do item selecionado." : "Cadastre SKU, preços, estoque mínimo e informações fiscais do produto."}</p>
           </div>
         </div>
-        <form id="products-form" class="form-grid">
+
+        <form id="products-form" class="products-form-grid" data-product-price-mode="${editing ? "sale" : "margin"}">
           <input type="hidden" name="id" value="${editing?.id ?? ""}">
           ${renderFormFeedback("products")}
-          <label><span>SKU</span><input type="text" name="sku" value="${escapeHtml(toFormValue(editing?.sku || editing?.code))}" required></label>
-          <label><span>Categoria</span><input type="text" name="category" value="${escapeHtml(toFormValue(editing?.category))}" required></label>
-          <label class="field-span-2"><span>Nome do produto</span><input type="text" name="name" value="${escapeHtml(toFormValue(editing?.name))}" required></label>
-          <label>
-            <span>Unidade</span>
-            <select name="unit" required>
-              ${state.data.options.product_units.map((unit) => `
-                <option value="${unit}" ${editing?.unit === unit ? "selected" : ""}>${unit}</option>
-              `).join("")}
-            </select>
-          </label>
-          <label><span>NCM</span><input type="text" name="ncm" value="${escapeHtml(toFormValue(editing?.ncm))}" placeholder="Ex.: 25232910"></label>
-          <label><span>CFOP padrão</span><input type="text" name="cfop_default" value="${escapeHtml(toFormValue(editing?.cfop_default))}" placeholder="Ex.: 5102"></label>
-          <label><span>Origem</span><input type="text" name="origin" value="${escapeHtml(toFormValue(editing?.origin))}" placeholder="0"></label>
-          <label><span>CSOSN</span><input type="text" name="csosn" value="${escapeHtml(toFormValue(editing?.csosn))}" placeholder="102"></label>
-          <label><span>Preço de custo</span>${renderMoneyInput({ name: "cost_price", value: editing?.cost_price ?? 0, required: true })}</label>
-          <label><span>Preço de venda</span>${renderMoneyInput({ name: "sale_price", value: editing?.sale_price ?? 0, required: true })}</label>
-          <label><span>Quantidade em estoque</span><input type="number" name="stock_quantity" min="0" step="0.01" value="${editing?.stock_quantity ?? 0}" required></label>
-          <label><span>Estoque mínimo</span><input type="number" name="min_stock" min="0" step="0.01" value="${editing?.min_stock ?? 0}" required></label>
-          <label>
-            <span>Status</span>
-            <select name="active">
-              <option value="true" ${(editing?.active ?? true) ? "selected" : ""}>Ativo</option>
-              <option value="false" ${editing?.active === false ? "selected" : ""}>Inativo</option>
-            </select>
-          </label>
-          <label class="field-span-2"><span>Descrição curta</span><textarea name="description" rows="3">${escapeHtml(toFormValue(editing?.description))}</textarea></label>
-          <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar alterações" : "Cadastrar produto"}</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-products-form">Limpar formulário</button>
+
+          <section class="products-form-section">
+            <div class="products-form-section-head">
+              <div class="products-form-section-icon" aria-hidden="true">${renderProductsIcon("basic")}</div>
+              <div>
+                <h4>Dados básicos</h4>
+                <p>Identificação comercial e descrição do produto.</p>
+              </div>
+            </div>
+            <div class="products-form-section-grid products-form-section-grid-basic">
+              <label>
+                <span>SKU <b class="required-mark">*</b></span>
+                <input type="text" name="sku" value="${escapeHtml(toFormValue(editing?.sku || editing?.code))}" placeholder="Ex.: MAT-001" required>
+                ${hasDuplicateSku ? '<small class="field-hint danger">Já existe um produto com este SKU.</small>' : '<small class="field-hint">Código interno usado para busca rápida e importação.</small>'}
+              </label>
+              <label>
+                <span>Categoria <b class="required-mark">*</b></span>
+                <input type="text" name="category" list="products-category-suggestions" value="${escapeHtml(toFormValue(editing?.category))}" placeholder="Ex.: Cimentos" required>
+              </label>
+              <label>
+                <span>Unidade <b class="required-mark">*</b></span>
+                <select name="unit" required>
+                  ${(state.data.options.product_units || ["UN"]).map((unit) => `
+                    <option value="${unit}" ${String(editing?.unit || "UN") === unit ? "selected" : ""}>${unit}</option>
+                  `).join("")}
+                </select>
+              </label>
+              <label class="field-span-3">
+                <span>Nome do produto <b class="required-mark">*</b></span>
+                <input type="text" name="name" value="${escapeHtml(toFormValue(editing?.name))}" placeholder="Ex.: Argamassa AC-III 20kg" required>
+              </label>
+              <label class="field-span-3">
+                <span>Descrição curta</span>
+                <textarea name="description" rows="3" placeholder="Descrição rápida para facilitar consultas e NF-e.">${escapeHtml(toFormValue(editing?.description))}</textarea>
+              </label>
+            </div>
+            <datalist id="products-category-suggestions">
+              ${categories.map((category) => `<option value="${escapeHtml(category)}"></option>`).join("")}
+            </datalist>
+          </section>
+
+          <section class="products-form-section">
+            <div class="products-form-section-head">
+              <div class="products-form-section-icon products-form-section-icon-accent" aria-hidden="true">${renderProductsIcon("pricing")}</div>
+              <div>
+                <h4>Valores</h4>
+                <p>Defina custo, margem e venda com cálculo automático.</p>
+              </div>
+            </div>
+            <div class="products-form-section-grid products-form-section-grid-values">
+              <label>
+                <span>Preço de custo <b class="required-mark">*</b></span>
+                ${renderMoneyInput({ name: "cost_price", value: editing?.cost_price ?? 0, required: true })}
+              </label>
+              <label>
+                <span>Margem (%)</span>
+                <input type="text" name="margin_percent" inputmode="decimal" value="${escapeHtml(formatDecimalInput(currentMargin, 2))}" placeholder="Ex.: 35">
+                <small class="field-hint">Ao alterar a margem, o preço de venda é recalculado automaticamente.</small>
+              </label>
+              <label>
+                <span>Preço de venda <b class="required-mark">*</b></span>
+                ${renderMoneyInput({ name: "sale_price", value: editing?.sale_price ?? 0, required: true })}
+                <small class="field-hint">Se você editar manualmente a venda, a margem será ajustada para refletir o novo valor.</small>
+              </label>
+            </div>
+          </section>
+
+          <section class="products-form-section">
+            <div class="products-form-section-head">
+              <div class="products-form-section-icon products-form-section-icon-soft" aria-hidden="true">${renderProductsIcon("fiscal")}</div>
+              <div>
+                <h4>Informações fiscais</h4>
+                <p>Base para emissão de NF-e e organização tributária.</p>
+              </div>
+            </div>
+            <div class="products-form-section-grid products-form-section-grid-fiscal">
+              <label>
+                <span>NCM</span>
+                <input type="text" name="ncm" value="${escapeHtml(toFormValue(editing?.ncm))}" placeholder="Ex.: 25232910">
+              </label>
+              <label>
+                <span>CFOP padrão</span>
+                <input type="text" name="cfop_default" value="${escapeHtml(toFormValue(editing?.cfop_default))}" placeholder="Ex.: 5102">
+              </label>
+              <label>
+                <span>CSOSN</span>
+                <select name="csosn">
+                  ${renderProductCsosnOptions(editing?.csosn || "")}
+                </select>
+              </label>
+              <label class="field-span-3">
+                <span>Origem</span>
+                <select name="origin">
+                  ${renderProductOriginOptions(editing?.origin || "")}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="products-form-section">
+            <div class="products-form-section-head">
+              <div class="products-form-section-icon" aria-hidden="true">${renderProductsIcon("warning")}</div>
+              <div>
+                <h4>Estoque e operação</h4>
+                <p>Controle operacional e observações internas do cadastro.</p>
+              </div>
+            </div>
+            <div class="products-form-section-grid products-form-section-grid-stock">
+              <label>
+                <span>Quantidade em estoque <b class="required-mark">*</b></span>
+                <input type="number" name="stock_quantity" min="0" step="0.01" value="${editing?.stock_quantity ?? 0}" required>
+              </label>
+              <label>
+                <span>Estoque mínimo <b class="required-mark">*</b></span>
+                <input type="number" name="min_stock" min="0" step="0.01" value="${editing?.min_stock ?? 0}" required>
+              </label>
+              <label>
+                <span>Status</span>
+                <select name="active">
+                  <option value="true" ${(editing?.active ?? true) ? "selected" : ""}>Ativo</option>
+                  <option value="false" ${editing?.active === false ? "selected" : ""}>Inativo</option>
+                </select>
+              </label>
+              <label class="field-span-3">
+                <span>Observações</span>
+                <textarea name="notes" rows="3" placeholder="Detalhes internos do produto, fornecedor ou observações fiscais.">${escapeHtml(toFormValue(editing?.notes))}</textarea>
+              </label>
+            </div>
+          </section>
+
+          <div class="products-form-actions">
+            <button type="button" class="btn btn-secondary" data-action="cancel-products-form">Cancelar</button>
+            <button type="button" class="btn btn-secondary" data-action="reset-products-form">Limpar</button>
+            <button type="submit" class="btn btn-primary">${resetButtonLabel}</button>
           </div>
         </form>
       </article>
 
-      <article class="panel">
-        <div class="section-header">
+      <article class="panel products-list-card">
+        <div class="products-panel-header">
           <div>
             <h3>Lista de produtos</h3>
-            <p>Busque por nome, SKU, categoria ou NCM e importe planilhas do catálogo.</p>
+            <p>Faça buscas rápidas, combine filtros inteligentes e importe planilhas sem perder o contexto da tela.</p>
           </div>
         </div>
-        <section class="panel toolbar-panel" data-filter-scope="products">
-          <div class="toolbar-row products-toolbar-row">
-            <label class="toolbar-field toolbar-search">
-              <span>Busca</span>
-              <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: cimento, MAT-001, ferragem, NCM">
+
+        <section class="products-toolbar-panel panel" data-filter-scope="products">
+          <div class="products-toolbar-primary">
+            <label class="toolbar-field toolbar-search products-toolbar-search">
+              <span>Busca principal</span>
+              <input type="search" name="search" value="${escapeHtml(filter.search || "")}" placeholder="Buscar por nome, SKU, código ou NCM">
             </label>
             <label class="toolbar-field">
               <span>Categoria</span>
               <select name="category">
                 <option value="">Todas</option>
-                ${categories.map((category) => `<option value="${escapeHtml(category)}" ${categoryFilter === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
+                ${categories.map((category) => `<option value="${escapeHtml(category)}" ${filter.category === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
               </select>
             </label>
             <label class="toolbar-field">
               <span>Status</span>
               <select name="active_filter">
-                <option value="active" ${activeFilter === "active" ? "selected" : ""}>Ativos</option>
-                <option value="inactive" ${activeFilter === "inactive" ? "selected" : ""}>Inativos</option>
-                <option value="all" ${activeFilter === "all" ? "selected" : ""}>Todos</option>
+                <option value="active" ${(filter.active_filter || "active") === "active" ? "selected" : ""}>Ativos</option>
+                <option value="inactive" ${filter.active_filter === "inactive" ? "selected" : ""}>Inativos</option>
+                <option value="all" ${filter.active_filter === "all" ? "selected" : ""}>Todos</option>
               </select>
             </label>
-            <div class="toolbar-field products-import-field">
-              <span>Arquivo</span>
-              <div class="inline-actions">
-                <input type="file" id="products-import-file" accept=".xlsx,.xlsm,.csv">
-                <button type="button" class="btn btn-secondary" data-action="import-products-sheet">Importar</button>
+            <div class="products-toolbar-buttons">
+              <button type="button" class="btn btn-secondary" data-action="toggle-products-filters">
+                <span aria-hidden="true">${renderProductsIcon("filters")}</span>
+                <span>${showAdvancedFilters ? "Ocultar filtros" : "Mais filtros"}</span>
+              </button>
+              <button type="button" class="btn btn-secondary" data-action="clear-products-filters">Limpar filtros</button>
+            </div>
+          </div>
+
+          ${showAdvancedFilters ? `
+            <div class="products-toolbar-advanced">
+              <label class="toolbar-field">
+                <span>Estoque</span>
+                <select name="stock_filter">
+                  <option value="" ${!filter.stock_filter ? "selected" : ""}>Todos</option>
+                  <option value="low" ${filter.stock_filter === "low" ? "selected" : ""}>Estoque baixo</option>
+                  <option value="empty" ${filter.stock_filter === "empty" ? "selected" : ""}>Sem estoque</option>
+                  <option value="normal" ${filter.stock_filter === "normal" ? "selected" : ""}>Estoque normal</option>
+                </select>
+              </label>
+              <label class="toolbar-field">
+                <span>Preço mínimo (R$)</span>
+                <input type="number" name="price_min" min="0" step="0.01" value="${escapeHtml(toFormValue(filter.price_min))}" placeholder="Mínimo">
+              </label>
+              <label class="toolbar-field">
+                <span>Preço máximo (R$)</span>
+                <input type="number" name="price_max" min="0" step="0.01" value="${escapeHtml(toFormValue(filter.price_max))}" placeholder="Máximo">
+              </label>
+            </div>
+          ` : ""}
+
+          <div class="products-filter-chips">
+            ${renderProductQuickChip("low_stock", "Estoque baixo", filter.quick_filter === "low_stock")}
+            ${renderProductQuickChip("out_of_stock", "Sem estoque", filter.quick_filter === "out_of_stock")}
+            ${renderProductQuickChip("most_sold", "Mais vendidos", filter.quick_filter === "most_sold")}
+            ${renderProductQuickChip("no_sales", "Sem venda", filter.quick_filter === "no_sales")}
+          </div>
+        </section>
+
+        <section class="products-upload-shell">
+          <div class="products-upload-head">
+            <div>
+              <h4>Importação de planilha</h4>
+              <p>Atualize seu catálogo em massa por Excel ou CSV, mantendo os SKUs existentes sincronizados.</p>
+            </div>
+            <div class="products-upload-actions">
+              <button type="button" class="btn btn-secondary" data-action="import-products-sheet">Importar planilha</button>
+            </div>
+          </div>
+          <div class="products-upload-grid">
+            <label class="products-upload-dropzone" for="products-import-file" data-products-upload-dropzone="true">
+              <span class="products-upload-dropzone-icon" aria-hidden="true">${renderProductsIcon("upload")}</span>
+              <span class="products-upload-dropzone-copy">
+                <strong>Arraste o arquivo aqui ou clique para selecionar</strong>
+                <small>Aceita .xlsx, .xlsm e .csv com atualização por SKU.</small>
+              </span>
+            </label>
+            <input class="products-upload-input" type="file" id="products-import-file" accept=".xlsx,.xlsm,.csv">
+            <div class="products-upload-meta" data-products-upload-meta="true">
+              <div class="products-upload-meta-copy">
+                <strong data-products-upload-name>Nenhum arquivo selecionado</strong>
+                <small data-products-upload-caption>Escolha uma planilha para importar ou atualizar os produtos cadastrados.</small>
               </div>
+              <button type="button" class="btn btn-secondary btn-compact" data-action="clear-products-import">Remover arquivo</button>
             </div>
           </div>
         </section>
+
         <div data-search-results-scope="products">${renderProductsListResults()}</div>
       </article>
     </section>
   `;
+}
+
+
+function resetProductsFilters() {
+  const currentPerPage = Number(state.filters.products.per_page || PRODUCTS_PER_PAGE);
+  state.filters.products = {
+    ...state.filters.products,
+    search: "",
+    category: "",
+    active_filter: "active",
+    stock_filter: "",
+    price_min: "",
+    price_max: "",
+    quick_filter: "",
+    show_advanced: false,
+    page: 1,
+    per_page: currentPerPage,
+  };
+}
+
+
+function buildDuplicateProductDraft(product) {
+  return {
+    ...product,
+    id: "",
+    sku: product?.sku ? `${product.sku}-COPIA` : "",
+    code: "",
+    name: product?.name ? `${product.name} (Cópia)` : "",
+  };
+}
+
+
+function readPercentInputValue(input) {
+  return Number(String(input?.value || "").replace(",", ".")) || 0;
+}
+
+
+function updateProductPricing(form, source = "init") {
+  if (!(form instanceof HTMLFormElement)) return;
+
+  const costInput = form.querySelector('[name="cost_price"]');
+  const saleInput = form.querySelector('[name="sale_price"]');
+  const marginInput = form.querySelector('[name="margin_percent"]');
+
+  if (!isMoneyInput(costInput) || !isMoneyInput(saleInput) || !(marginInput instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const costValue = parseMoneyInputValue(costInput.value);
+  const saleValue = parseMoneyInputValue(saleInput.value);
+  const marginValue = readPercentInputValue(marginInput);
+  const mode = form.dataset.productPriceMode || "margin";
+
+  if (source === "margin") {
+    form.dataset.productPriceMode = "margin";
+    applyMoneyDigits(saleInput, moneyDigitsFromValue(calculateProductSalePrice(costValue, marginValue)));
+    return;
+  }
+
+  if (source === "sale") {
+    form.dataset.productPriceMode = "sale";
+    marginInput.value = formatDecimalInput(calculateProductMarginPercent(costValue, saleValue), 2);
+    return;
+  }
+
+  if (source === "cost") {
+    if (mode === "sale") {
+      marginInput.value = formatDecimalInput(calculateProductMarginPercent(costValue, saleValue), 2);
+    } else {
+      applyMoneyDigits(saleInput, moneyDigitsFromValue(calculateProductSalePrice(costValue, marginValue)));
+    }
+    return;
+  }
+
+  form.dataset.productPriceMode = saleValue > 0 ? "sale" : "margin";
+  marginInput.value = formatDecimalInput(calculateProductMarginPercent(costValue, saleValue), 2);
+}
+
+
+function initializeProductsForm(form) {
+  if (!(form instanceof HTMLFormElement)) return;
+  updateProductPricing(form, "init");
+}
+
+
+function resetProductsForm(form) {
+  if (!(form instanceof HTMLFormElement)) return;
+  form.reset();
+
+  form.querySelectorAll("[data-money-input]").forEach((input) => {
+    delete input.dataset.moneyDigits;
+    delete input.dataset.moneyValue;
+  });
+
+  const hiddenIdField = form.querySelector('[name="id"]');
+  if (hiddenIdField) {
+    hiddenIdField.value = state.editing.products?.id ?? "";
+  }
+
+  syncMoneyInputs(form);
+  initializeProductsForm(form);
+  clearFormFeedback("products", form);
+}
+
+
+function updateProductsImportSelection(fileInput = document.getElementById("products-import-file")) {
+  const fileNameElement = document.querySelector("[data-products-upload-name]");
+  const fileCaptionElement = document.querySelector("[data-products-upload-caption]");
+  const metaElement = document.querySelector("[data-products-upload-meta]");
+  const dropzoneElement = document.querySelector("[data-products-upload-dropzone]");
+  const file = fileInput?.files?.[0] || null;
+
+  if (fileNameElement) {
+    fileNameElement.textContent = file?.name || "Nenhum arquivo selecionado";
+  }
+  if (fileCaptionElement) {
+    fileCaptionElement.textContent = file
+      ? `${(file.size / 1024).toFixed(1)} KB • pronto para importar`
+      : "Escolha uma planilha para importar ou atualizar os produtos cadastrados.";
+  }
+  if (metaElement) {
+    metaElement.classList.toggle("has-file", Boolean(file));
+  }
+  if (dropzoneElement) {
+    dropzoneElement.classList.toggle("has-file", Boolean(file));
+  }
+}
+
+
+function clearProductsImportSelection() {
+  const fileInput = document.getElementById("products-import-file");
+  if (fileInput) {
+    fileInput.value = "";
+  }
+  updateProductsImportSelection(fileInput);
 }
 
 
@@ -4811,6 +5483,50 @@ function handlePageFocusIn(event) {
 }
 
 
+function handlePageDragOver(event) {
+  const dropzone = event.target instanceof HTMLElement
+    ? event.target.closest("[data-products-upload-dropzone]")
+    : null;
+  if (!dropzone) return;
+  event.preventDefault();
+  dropzone.classList.add("is-dragover");
+}
+
+
+function handlePageDragLeave(event) {
+  const dropzone = event.target instanceof HTMLElement
+    ? event.target.closest("[data-products-upload-dropzone]")
+    : null;
+  if (!dropzone) return;
+  if (event.relatedTarget instanceof Node && dropzone.contains(event.relatedTarget)) {
+    return;
+  }
+  dropzone.classList.remove("is-dragover");
+}
+
+
+function handlePageDrop(event) {
+  const dropzone = event.target instanceof HTMLElement
+    ? event.target.closest("[data-products-upload-dropzone]")
+    : null;
+  if (!dropzone) return;
+  event.preventDefault();
+  dropzone.classList.remove("is-dragover");
+
+  const fileInput = document.getElementById("products-import-file");
+  const files = event.dataTransfer?.files;
+  if (!(fileInput instanceof HTMLInputElement) || !files?.length) return;
+
+  try {
+    fileInput.files = files;
+  } catch {
+    return;
+  }
+
+  updateProductsImportSelection(fileInput);
+}
+
+
 function handlePageClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
@@ -4819,19 +5535,47 @@ function handlePageClick(event) {
 
   const actionMap = {
     "clear-products-form": () => clearEditing("products"),
+    "cancel-products-form": () => clearEditing("products"),
     "clear-customers-form": () => clearEditing("customers"),
     "clear-sales-form": () => clearEditing("sales"),
     "clear-quotes-form": () => clearEditing("quotes"),
     "clear-expenses-form": () => clearEditing("expenses"),
     "clear-bills-form": () => clearEditing("bills"),
     "clear-checks-form": () => clearEditing("checks"),
+    "reset-products-form": () => {
+      const form = document.getElementById("products-form");
+      if (form) {
+        resetProductsForm(form);
+      }
+    },
     "products-prev-page": () => {
       state.filters.products.page = Math.max((state.filters.products.page || 1) - 1, 1);
-      renderCurrentPage();
+      renderFilterResultsScope("products");
     },
     "products-next-page": () => {
       state.filters.products.page = (state.filters.products.page || 1) + 1;
+      renderFilterResultsScope("products");
+    },
+    "products-go-page": () => {
+      state.filters.products.page = Math.max(Number(button.dataset.page || 1), 1);
+      renderFilterResultsScope("products");
+    },
+    "toggle-products-filters": () => {
+      state.filters.products.show_advanced = !state.filters.products.show_advanced;
       renderCurrentPage();
+    },
+    "clear-products-filters": () => {
+      resetProductsFilters();
+      renderCurrentPage();
+    },
+    "products-quick-filter": () => {
+      const nextValue = button.dataset.filterValue || "";
+      state.filters.products.quick_filter = state.filters.products.quick_filter === nextValue ? "" : nextValue;
+      state.filters.products.page = 1;
+      renderCurrentPage();
+    },
+    "clear-products-import": () => {
+      clearProductsImportSelection();
     },
     "sales-prev-page": () => {
       state.filters.sales.page = Math.max((state.filters.sales.page || 1) - 1, 1);
@@ -4914,10 +5658,17 @@ function handlePageClick(event) {
         state.filters.sales.end = todayIso();
       }
 
-      renderCurrentPage();
-    },
-    "edit-product": () => editEntity("products", id),
-    "edit-customer": () => editEntity("customers", id),
+        renderCurrentPage();
+      },
+      "edit-product": () => editEntity("products", id),
+      "duplicate-product": () => {
+        const product = state.data.products.find((item) => String(item.id) === String(id));
+        if (!product) return;
+        state.editing.products = buildDuplicateProductDraft(product);
+        clearFormFeedback("products");
+        renderCurrentPage();
+      },
+      "edit-customer": () => editEntity("customers", id),
     "edit-sale": () => editEntity("sales", id),
     "edit-quote": () => editEntity("quotes", id),
     "edit-expense": () => editEntity("expenses", id),
@@ -4980,6 +5731,11 @@ function handlePageChange(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
+  if (target instanceof HTMLInputElement && target.id === "products-import-file") {
+    updateProductsImportSelection(target);
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.dataset.action === "toggle-bill-paid") {
     void toggleBillPaid(target.dataset.id, target.checked);
     return;
@@ -5003,7 +5759,7 @@ function handlePageChange(event) {
       if (scope === "sales" && target.name !== "page") {
         state.filters.sales.page = 1;
       }
-      if (scope === "products" && ["category", "active_filter"].includes(target.name)) {
+      if (scope === "products" && target.name !== "page") {
         state.filters.products.page = 1;
       }
       if (scope === "nfe" && target.name === "sale_id") {
@@ -5022,6 +5778,17 @@ function handlePageChange(event) {
   }
 
   const form = target.closest("form");
+  if (form?.getAttribute("id") === "products-form") {
+    const fieldName = target.getAttribute("name") || "";
+    if (fieldName === "margin_percent") {
+      updateProductPricing(form, "margin");
+      return;
+    }
+    if (fieldName === "active") {
+      return;
+    }
+  }
+
   if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_time") {
     const periodLabel = inferSalePeriod(target.value || currentTimeValue());
     const summary = form.querySelector("[data-sale-period-summary]");
@@ -5076,6 +5843,22 @@ function handlePageInput(event) {
   }
 
   const form = target.closest("form");
+  if (form?.getAttribute("id") === "products-form") {
+    const fieldName = target.getAttribute("name") || "";
+    if (fieldName === "margin_percent") {
+      updateProductPricing(form, "margin");
+      return;
+    }
+    if (fieldName === "cost_price") {
+      updateProductPricing(form, "cost");
+      return;
+    }
+    if (fieldName === "sale_price") {
+      updateProductPricing(form, "sale");
+      return;
+    }
+  }
+
   if (
     form?.getAttribute("id") === "quotes-form"
     && ["draft_quantity", "draft_unit_price", "discount_amount", "draft_item_name"].includes(target.getAttribute("name") || "")
@@ -5180,6 +5963,9 @@ async function submitSimpleForm(form, scope) {
   );
   const id = payload.id;
   delete payload.id;
+  if (scope === "products") {
+    delete payload.margin_percent;
+  }
 
   try {
     validateSimplePayload(scope, payload);
@@ -5413,14 +6199,15 @@ async function importProductsSheet() {
     if (report.errors?.length) {
       showToast(`A importação terminou com ${report.errors.length} aviso(s).`, "info");
     }
-    await loadData();
-    if (fileInput) {
-      fileInput.value = "";
+      await loadData();
+      if (fileInput) {
+        fileInput.value = "";
+      }
+      updateProductsImportSelection(fileInput);
+    } catch (error) {
+      showToast(error.message, "error");
     }
-  } catch (error) {
-    showToast(error.message, "error");
   }
-}
 
 
 async function validateSelectedSaleForNfe() {
