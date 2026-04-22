@@ -28,7 +28,7 @@ const QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT
 const NOTIFICATION_SESSION_KEY = "doisirmaos.notifications.v1";
 const TOP_ALERT_SESSION_KEY = "doisirmaos.top-alerts.v1";
 const SIDEBAR_PREFERENCE_KEY = "doisirmaos.sidebar.v1";
-const NOTIFICATION_GREETING_NAME = "Sergio";
+const NOTIFICATION_GREETING_NAME = "Sérgio";
 const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})$/;
 const SIDEBAR_MOBILE_QUERY = window.matchMedia("(max-width: 960px)");
 
@@ -40,6 +40,7 @@ const pageTitles = {
   quotes: "Orçamentos",
   nfe: "NF-e",
   expenses: "Contas Pagas",
+  bills: "Boletos",
   checks: "Cheques",
   reports: "Relatórios",
 };
@@ -78,7 +79,9 @@ const state = {
     sales: [],
     quotes: [],
     expenses: [],
+    bills: [],
     checks: [],
+    daily_bill_alert: null,
     stock_overview: {
       total_products: 0,
       low_stock_products: 0,
@@ -93,6 +96,7 @@ const state = {
       product_units: [],
       quote_item_units: [],
       quote_statuses: [],
+      bill_statuses: [],
       check_statuses: [],
       stock_movement_types: [],
       fiscal_environments: [],
@@ -105,6 +109,7 @@ const state = {
     sales: null,
     quotes: null,
     expenses: null,
+    bills: null,
     checks: null,
   },
   formFeedback: {
@@ -114,6 +119,7 @@ const state = {
     sales: null,
     quotes: null,
     expenses: null,
+    bills: null,
     checks: null,
     fiscal: null,
   },
@@ -131,6 +137,7 @@ const state = {
     quotes: { search: "", status: "" },
     nfe: { search: "", sale_id: "" },
     expenses: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
+    bills: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
     checks: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
     reports: { module: "sales", preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
   },
@@ -144,6 +151,7 @@ const formScopeMap = {
   "sales-form": "sales",
   "quotes-form": "quotes",
   "expenses-form": "expenses",
+  "bills-form": "bills",
   "checks-form": "checks",
   "fiscal-settings-form": "fiscal",
 };
@@ -597,6 +605,24 @@ function buildNotifications() {
     });
   }
 
+  const billAlert = state.data.daily_bill_alert;
+  const todayBillNotificationId = billAlert?.id || `bills-due-today-${today}`;
+  const dueTodayBillsCount = Number(billAlert?.count || 0);
+  const dueTodayBillsTotal = Number(billAlert?.total_amount || 0);
+
+  if (billAlert?.has_alert && dueTodayBillsCount > 0 && dueTodayBillsTotal > 0 && !dismissedIds.has(todayBillNotificationId)) {
+    const isSingleBill = dueTodayBillsCount === 1;
+    notifications.push({
+      id: todayBillNotificationId,
+      tone: "warning",
+      title: isSingleBill ? "Boleto vencendo hoje" : "Boletos vencendo hoje",
+      message: isSingleBill
+        ? `Olá ${NOTIFICATION_GREETING_NAME}, hoje você tem 1 boleto para pagar, no valor de ${formatMoney(dueTodayBillsTotal)}.`
+        : `Olá ${NOTIFICATION_GREETING_NAME}, hoje você tem ${dueTodayBillsCount} boletos para pagar, no total de ${formatMoney(dueTodayBillsTotal)}.`,
+      meta: `${dueTodayBillsCount} boleto(s) com vencimento em ${formatDate(billAlert.date || today)}.`,
+    });
+  }
+
   return notifications;
 }
 
@@ -825,7 +851,9 @@ async function loadData() {
     sales: payload.sales || [],
     quotes: payload.quotes || [],
     expenses: payload.expenses || [],
+    bills: payload.bills || [],
     checks: payload.checks || [],
+    daily_bill_alert: payload.daily_bill_alert || null,
     stock_overview: payload.stock_overview || state.data.stock_overview,
     nfe_issued: payload.nfe_issued || [],
     fiscal_settings: payload.fiscal_settings || {},
@@ -857,6 +885,7 @@ function renderCurrentPage() {
     quotes: renderQuotesPage,
     nfe: renderNfePage,
     expenses: renderExpensesPage,
+    bills: renderBillsPage,
     checks: renderChecksPage,
     reports: renderReportsPage,
   };
@@ -929,6 +958,11 @@ function getSearchResultsMarkup(scope, part = "default") {
     expenses: {
       insights: renderExpensesInsightsSection,
       recent: renderExpensesRecentPanel,
+    },
+    bills: {
+      metrics: renderBillsMetricsSection,
+      dashboard: renderBillsDashboardSection,
+      list: renderBillsListPanel,
     },
     checks: {
       metrics: renderChecksMetricsSection,
@@ -1137,6 +1171,15 @@ function validateSimplePayload(scope, payload) {
     }
     if (!isValidNumber(payload.amount, { min: 0.01, allowZero: false })) {
       throw new Error("Informe um valor válido para a conta paga.");
+    }
+  }
+
+  if (scope === "bills") {
+    if (!payload.beneficiary || !payload.due_date) {
+      throw new Error("Preencha beneficiário e data de vencimento do boleto.");
+    }
+    if (!isValidNumber(payload.amount, { min: 0.01, allowZero: false })) {
+      throw new Error("Informe um valor válido para o boleto.");
     }
   }
 
@@ -1363,8 +1406,18 @@ function renderPeriodToolbar(scope, options = {}) {
     statusOptions = [],
     showModule = false,
     manualDateFields = [],
+    presetOptions = null,
   } = options;
   const manualFieldNames = new Set(manualDateFields);
+  const presets = presetOptions || [
+    { value: "today", label: "Hoje" },
+    { value: "day", label: "Dia específico" },
+    { value: "yesterday", label: "Ontem" },
+    { value: "week", label: "Esta semana" },
+    { value: "month", label: "Este mês" },
+    { value: "year", label: "Este ano" },
+    { value: "custom", label: "Período personalizado" },
+  ];
 
   return `
     <section class="panel toolbar-panel" data-filter-scope="${scope}">
@@ -1388,15 +1441,7 @@ function renderPeriodToolbar(scope, options = {}) {
         <label class="toolbar-field">
           <span>Filtro</span>
           <select name="preset">
-            ${[
-              { value: "today", label: "Hoje" },
-              { value: "day", label: "Dia específico" },
-              { value: "yesterday", label: "Ontem" },
-              { value: "week", label: "Esta semana" },
-              { value: "month", label: "Este mês" },
-              { value: "year", label: "Este ano" },
-              { value: "custom", label: "Período personalizado" },
-            ].map((item) => `
+            ${presets.map((item) => `
               <option value="${item.value}" ${filter.preset === item.value ? "selected" : ""}>${item.label}</option>
             `).join("")}
           </select>
@@ -1451,7 +1496,9 @@ function renderPeriodToolbar(scope, options = {}) {
 function statusTone(status) {
   const normalized = (status || "").toLowerCase();
   if (normalized.includes("atras")) return "danger";
+  if (normalized.includes("venc")) return "warning";
   if (normalized.includes("pend")) return "warning";
+  if (normalized.includes("pago")) return "success";
   if (normalized.includes("entrada")) return "success";
   if (normalized.includes("saida")) return "warning";
   if (normalized.includes("ajuste")) return "brand";
@@ -2556,6 +2603,211 @@ function renderExpensesRecentPanel() {
           </table>
         </div>
       ` : renderEmptyState("Nenhuma conta paga encontrada", "Cadastre uma nova despesa ou ajuste o filtro.")}
+    </article>
+  `;
+}
+
+
+function getBillsPeriod() {
+  const preset = state.filters.bills.preset;
+
+  if (preset === "all") {
+    return {
+      label: "Todos os boletos",
+      start: "",
+      end: "",
+    };
+  }
+
+  if (preset === "overdue") {
+    return {
+      label: "Boletos atrasados",
+      start: "",
+      end: "",
+    };
+  }
+
+  return getPeriod("bills");
+}
+
+
+function getFilteredBillsData() {
+  const period = getBillsPeriod();
+  let billsInPeriod = [...state.data.bills];
+
+  if (state.filters.bills.preset === "overdue") {
+    billsInPeriod = billsInPeriod.filter((bill) => bill.is_overdue);
+  } else if (state.filters.bills.preset !== "all") {
+    billsInPeriod = filterByPeriod(billsInPeriod, "due_date", period);
+  }
+
+  let filteredBills = getSimpleSearchRecords(
+    billsInPeriod,
+    ["beneficiary", "notes", "effective_status", "status"],
+    state.filters.bills.search,
+  );
+
+  if (state.filters.bills.status) {
+    filteredBills = filteredBills.filter((bill) => (
+      bill.effective_status === state.filters.bills.status || bill.status === state.filters.bills.status
+    ));
+  }
+
+  return {
+    period,
+    billsInPeriod,
+    filteredBills,
+    pendingBills: billsInPeriod.filter((bill) => !bill.is_paid),
+    paidBills: billsInPeriod.filter((bill) => bill.is_paid),
+    dueTodayBills: billsInPeriod.filter((bill) => bill.is_due_today),
+    overdueBills: billsInPeriod.filter((bill) => bill.is_overdue),
+  };
+}
+
+
+function renderBillPaidToggle(bill) {
+  return `
+    <label class="table-paid-toggle">
+      <input
+        type="checkbox"
+        data-action="toggle-bill-paid"
+        data-id="${bill.id}"
+        ${bill.is_paid ? "checked" : ""}
+      >
+      <span>Pago</span>
+    </label>
+  `;
+}
+
+
+function renderBillsMetricsSection() {
+  const { filteredBills, pendingBills, paidBills, dueTodayBills, overdueBills } = getFilteredBillsData();
+  const metrics = [
+    {
+      label: "Boletos pendentes",
+      value: formatNumber(pendingBills.length),
+      helper: formatMoney(sumBy(pendingBills, (bill) => bill.amount)),
+      tone: pendingBills.length ? "warning" : "neutral",
+    },
+    {
+      label: "Boletos pagos",
+      value: formatNumber(paidBills.length),
+      helper: formatMoney(sumBy(paidBills, (bill) => bill.amount)),
+      tone: "success",
+    },
+    {
+      label: "Vencendo hoje",
+      value: formatNumber(dueTodayBills.length),
+      helper: formatMoney(sumBy(dueTodayBills, (bill) => bill.amount)),
+      tone: dueTodayBills.length ? "warning" : "neutral",
+    },
+    {
+      label: "Atrasados",
+      value: formatNumber(overdueBills.length),
+      helper: formatMoney(sumBy(overdueBills, (bill) => bill.amount)),
+      tone: overdueBills.length ? "danger" : "success",
+    },
+    {
+      label: "Valor total pendente",
+      value: formatMoney(sumBy(pendingBills, (bill) => bill.amount)),
+      helper: `${pendingBills.length} boleto(s) em aberto`,
+      tone: "brand",
+    },
+    {
+      label: "Valor total do filtro",
+      value: formatMoney(sumBy(filteredBills, (bill) => bill.amount)),
+      helper: `${filteredBills.length} registro(s)`,
+      tone: "neutral",
+    },
+  ];
+
+  return `
+    <section class="metrics-grid ${getMetricsGridClass(metrics.length)}">
+      ${metrics.map((metric) => renderMetricCard(metric)).join("")}
+    </section>
+  `;
+}
+
+
+function renderBillsDashboardSection() {
+  const { period, billsInPeriod, dueTodayBills, overdueBills } = getFilteredBillsData();
+
+  return `
+    <section class="dashboard-grid">
+      ${renderBarChart({
+        title: "Boletos por semana",
+        subtitle: "Agrupado pela data de vencimento",
+        data: groupByWeek(billsInPeriod, "due_date", (bill) => bill.amount, 8),
+      })}
+      ${renderBarChart({
+        title: "Boletos por mês",
+        subtitle: "Agrupado pela data de vencimento",
+        data: groupByMonth(billsInPeriod, "due_date", (bill) => bill.amount, 6),
+      })}
+      ${renderStatList({
+        title: "Quantidade por status",
+        subtitle: period.label,
+        rows: getStatusTotals(billsInPeriod, "effective_status", "amount"),
+        money: true,
+      })}
+      ${renderStatList({
+        title: dueTodayBills.length ? "Boletos vencendo hoje" : "Boletos atrasados",
+        subtitle: dueTodayBills.length ? "Atenção imediata" : "Pendências vencidas",
+        rows: (dueTodayBills.length ? dueTodayBills : overdueBills).map((bill) => ({
+          label: bill.beneficiary,
+          value: bill.amount,
+          helper: dueTodayBills.length
+            ? `Vence em ${formatDate(bill.due_date)}`
+            : `${bill.days_overdue} dia(s) de atraso`,
+        })),
+      })}
+    </section>
+  `;
+}
+
+
+function renderBillsListPanel() {
+  const { filteredBills } = getFilteredBillsData();
+
+  return `
+    <article class="panel">
+      <div class="section-header">
+        <div>
+          <h3>Lista de boletos</h3>
+          <p>Controle prático com vencimento, status e marcação rápida de pagamento.</p>
+        </div>
+      </div>
+      ${filteredBills.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Beneficiário</th>
+                <th>Vencimento</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Pago</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredBills.map((bill) => `
+                <tr class="${bill.is_overdue ? "row-danger" : bill.is_due_today ? "row-warning" : ""}">
+                  <td>
+                    <strong>${escapeHtml(bill.beneficiary)}</strong>
+                    <small>${escapeHtml(bill.notes || "Sem observações")}</small>
+                  </td>
+                  <td>${formatDate(bill.due_date)}</td>
+                  <td>${formatMoney(bill.amount)}</td>
+                  <td>${renderBadge(bill.effective_status, statusTone(bill.effective_status))}</td>
+                  <td>${renderBillPaidToggle(bill)}</td>
+                  <td>${renderTableActions("bill", bill.id)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Nenhum boleto encontrado", "Cadastre um boleto ou ajuste os filtros da tela.")}
     </article>
   `;
 }
@@ -3817,6 +4069,84 @@ function renderExpensesPage() {
 }
 
 
+function renderBillsPage() {
+  const editing = state.editing.bills;
+
+  return `
+    ${renderHero(
+      "Boletos",
+      "Controle os boletos a pagar com alertas de vencimento, filtros rápidos e atualização imediata do status.",
+    )}
+
+    ${renderPeriodToolbar("bills", {
+      showSearch: true,
+      searchPlaceholder: "Buscar por beneficiário",
+      showStatus: true,
+      statusOptions: state.data.options.bill_statuses || [],
+      presetOptions: [
+        { value: "today", label: "Hoje" },
+        { value: "week", label: "Esta semana" },
+        { value: "month", label: "Este mês" },
+        { value: "overdue", label: "Atrasados" },
+        { value: "all", label: "Todos" },
+        { value: "custom", label: "Período personalizado" },
+      ],
+      manualDateFields: ["start", "end"],
+    })}
+
+    <div data-search-results-scope="bills" data-search-results-part="metrics">${renderBillsMetricsSection()}</div>
+    <div data-search-results-scope="bills" data-search-results-part="dashboard">${renderBillsDashboardSection()}</div>
+
+    <section class="page-grid page-grid-2">
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>${editing ? "Editar boleto" : "Novo boleto"}</h3>
+            <p>${editing ? "Atualize beneficiário, vencimento, valor e status do boleto selecionado." : "Cadastre boletos manualmente e marque como pago quando necessário."}</p>
+          </div>
+        </div>
+        <form id="bills-form" class="form-grid">
+          <input type="hidden" name="id" value="${editing?.id ?? ""}">
+          ${renderFormFeedback("bills")}
+          <label class="field-span-2">
+            <span>Beneficiário</span>
+            <input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" required>
+          </label>
+          <label>
+            <span>Data do vencimento</span>
+            <input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required>
+          </label>
+          <label>
+            <span>Valor</span>
+            ${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}
+          </label>
+          <div class="field-span-2 inline-check-field">
+            <span>Status</span>
+            <input type="hidden" name="is_paid" value="false">
+            <label class="inline-check-card">
+              <input type="checkbox" name="is_paid" value="true" ${editing?.is_paid ? "checked" : ""}>
+              <div>
+                <strong>Pago</strong>
+                <small>Marque quando o boleto já tiver sido quitado.</small>
+              </div>
+            </label>
+          </div>
+          <label class="field-span-2">
+            <span>Observações</span>
+            <textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea>
+          </label>
+          <div class="form-actions field-span-2">
+            <button type="submit" class="btn btn-primary">${editing ? "Salvar boleto" : "Cadastrar boleto"}</button>
+            <button type="button" class="btn btn-secondary" data-action="clear-bills-form">Limpar formulário</button>
+          </div>
+        </form>
+      </article>
+      <div data-search-results-scope="bills" data-search-results-part="list">${renderBillsListPanel()}</div>
+    </section>
+  `;
+}
+
+
 function renderChecksPage() {
   const editing = state.editing.checks;
 
@@ -4056,6 +4386,7 @@ async function handlePageSubmit(event) {
     "sales-form": () => submitSalesForm(form),
     "quotes-form": () => submitQuotesForm(form),
     "expenses-form": () => submitSimpleForm(form, "expenses"),
+    "bills-form": () => submitSimpleForm(form, "bills"),
     "checks-form": () => submitSimpleForm(form, "checks"),
     "fiscal-settings-form": () => submitFiscalSettingsForm(form),
   };
@@ -4146,6 +4477,7 @@ function handlePageClick(event) {
     "clear-sales-form": () => clearEditing("sales"),
     "clear-quotes-form": () => clearEditing("quotes"),
     "clear-expenses-form": () => clearEditing("expenses"),
+    "clear-bills-form": () => clearEditing("bills"),
     "clear-checks-form": () => clearEditing("checks"),
     "products-prev-page": () => {
       state.filters.products.page = Math.max((state.filters.products.page || 1) - 1, 1);
@@ -4204,12 +4536,14 @@ function handlePageClick(event) {
     "edit-sale": () => editEntity("sales", id),
     "edit-quote": () => editEntity("quotes", id),
     "edit-expense": () => editEntity("expenses", id),
+    "edit-bill": () => editEntity("bills", id),
     "edit-check": () => editEntity("checks", id),
     "delete-product": () => deleteEntity("products", id, "produto"),
     "delete-customer": () => deleteEntity("customers", id, "cliente"),
     "delete-sale": () => deleteEntity("sales", id, "venda"),
     "delete-quote": () => deleteEntity("quotes", id, "orçamento"),
     "delete-expense": () => deleteEntity("expenses", id, "conta paga"),
+    "delete-bill": () => deleteEntity("bills", id, "boleto"),
     "delete-check": () => deleteEntity("checks", id, "cheque"),
     "print-quote": () => openQuoteOutput(id, "print"),
     "pdf-quote": () => openQuoteOutput(id, "pdf"),
@@ -4260,6 +4594,11 @@ function handlePageClick(event) {
 function handlePageChange(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
+
+  if (target instanceof HTMLInputElement && target.dataset.action === "toggle-bill-paid") {
+    void toggleBillPaid(target.dataset.id, target.checked);
+    return;
+  }
 
   if (isManualToolbarDateInput(target)) {
     commitManualToolbarDate(target);
@@ -4421,6 +4760,24 @@ async function deleteEntity(scope, id, label) {
     showToast(`${label.charAt(0).toUpperCase() + label.slice(1)} excluído com sucesso.`);
   } catch (error) {
     showToast(error.message, "error");
+  }
+}
+
+
+async function toggleBillPaid(id, isPaid) {
+  if (!id) return;
+
+  try {
+    await api.update("bills", id, { is_paid: isPaid });
+    if (state.editing.bills && String(state.editing.bills.id) === String(id)) {
+      state.editing.bills = null;
+    }
+    clearFormFeedback("bills");
+    await loadData();
+    showToast(isPaid ? "Boleto marcado como pago." : "Boleto voltou para pendente.");
+  } catch (error) {
+    showToast(error.message, "error");
+    await loadData();
   }
 }
 

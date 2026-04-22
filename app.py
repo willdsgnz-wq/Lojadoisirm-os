@@ -38,6 +38,7 @@ ENTITY_HANDLERS: dict[str, tuple[CollectionGetter, CollectionCreator, ItemUpdate
     "sales": (services.list_sales, services.create_sale, services.update_sale, services.delete_sale),
     "quotes": (services.list_quotes, services.create_quote, services.update_quote, services.delete_quote),
     "expenses": (services.list_expenses, services.create_expense, services.update_expense, services.delete_expense),
+    "bills": (services.list_bills, services.create_bill, services.update_bill, services.delete_bill),
     "checks": (services.list_checks, services.create_check, services.update_check, services.delete_check),
 }
 

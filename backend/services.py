@@ -35,6 +35,7 @@ PRODUCT_UNITS = ["UN", "KG", "M3", "M2", "SC", "RL", "CH", "LT", "CX"]
 QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"]
 QUOTE_STATUSES = ["Pendente", "Aprovado", "Nao aprovado"]
 CHECK_STATUSES = ["Pendente", "Compensado", "Atrasado", "Cancelado"]
+BILL_STATUSES = ["Pendente", "Pago", "Vencendo hoje", "Atrasado"]
 STOCK_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "AJUSTE"]
 FISCAL_ENVIRONMENTS = ["homologation", "production"]
 FISCAL_PROVIDER_OPTIONS = ["mock", "focus_nfe", "nfe_io", "tecnospeed"]
@@ -216,6 +217,31 @@ def _serialize_check(row: dict[str, Any]) -> dict[str, Any]:
     item["days_pending"] = days_pending
     item["days_overdue"] = days_overdue
     item["is_overdue"] = effective_status == "Atrasado"
+    return item
+
+
+def _serialize_bill(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    due_date = parse_iso_date(item["due_date"])
+    today = date.today()
+    is_paid = bool(item.get("is_paid"))
+
+    effective_status = "Pago" if is_paid else "Pendente"
+    is_due_today = bool(not is_paid and due_date and due_date == today)
+    is_overdue = bool(not is_paid and due_date and due_date < today)
+
+    if is_overdue:
+        effective_status = "Atrasado"
+    elif is_due_today:
+        effective_status = "Vencendo hoje"
+
+    item["is_paid"] = is_paid
+    item["effective_status"] = effective_status
+    item["status"] = effective_status
+    item["is_due_today"] = is_due_today
+    item["is_overdue"] = is_overdue
+    item["is_pending"] = not is_paid
+    item["days_overdue"] = (today - due_date).days if is_overdue and due_date else 0
     return item
 
 
@@ -1345,6 +1371,95 @@ def delete_expense(expense_id: int) -> None:
         raise ServiceError("Conta paga não encontrada.", 404)
 
 
+def list_bills() -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM bills
+            ORDER BY is_paid ASC, due_date ASC, id DESC
+            """
+        ).fetchall()
+    return [_serialize_bill(row) for row in rows]
+
+
+def get_bill(bill_id: int) -> dict[str, Any]:
+    with get_connection() as connection:
+        row = connection.execute("SELECT * FROM bills WHERE id = ?", (bill_id,)).fetchone()
+    if not row:
+        raise ServiceError("Boleto nÃ£o encontrado.", 404)
+    return _serialize_bill(row)
+
+
+def create_bill(payload: dict[str, Any]) -> dict[str, Any]:
+    beneficiary = _require_text(payload.get("beneficiary"), "beneficiary")
+    due_date = ensure_date(payload.get("due_date"))
+    amount = _parse_amount(payload.get("amount"), "amount", min_value=0.01, allow_zero=False)
+    is_paid = _parse_bool(payload.get("is_paid"), False)
+    now = iso_now()
+
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO bills (beneficiary, due_date, amount, is_paid, notes, paid_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                beneficiary,
+                due_date,
+                amount,
+                is_paid,
+                _clean_text(payload.get("notes")),
+                now if is_paid else None,
+                now,
+            ),
+        )
+        bill_id = cursor.lastrowid
+
+    return get_bill(bill_id)
+
+
+def update_bill(bill_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    current = get_bill(bill_id)
+    next_is_paid = _parse_bool(payload.get("is_paid"), current["is_paid"])
+    now = iso_now()
+
+    if current["is_paid"] and next_is_paid:
+        paid_at = current.get("paid_at") or now
+    elif not current["is_paid"] and next_is_paid:
+        paid_at = now
+    else:
+        paid_at = None
+
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE bills
+            SET beneficiary = ?, due_date = ?, amount = ?, is_paid = ?, notes = ?, paid_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                _require_text(payload.get("beneficiary", current["beneficiary"]), "beneficiary"),
+                ensure_date(payload.get("due_date"), current["due_date"]),
+                _parse_amount(payload.get("amount", current["amount"]), "amount", min_value=0.01, allow_zero=False),
+                next_is_paid,
+                _clean_text(payload.get("notes") if payload.get("notes") is not None else current.get("notes")),
+                paid_at,
+                now,
+                bill_id,
+            ),
+        )
+
+    return get_bill(bill_id)
+
+
+def delete_bill(bill_id: int) -> None:
+    with get_connection() as connection:
+        deleted = connection.execute("DELETE FROM bills WHERE id = ?", (bill_id,)).rowcount
+    if not deleted:
+        raise ServiceError("Boleto nÃ£o encontrado.", 404)
+
+
 def list_checks() -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
@@ -2061,6 +2176,29 @@ def get_today_due_checks_summary() -> dict[str, Any]:
     }
 
 
+def get_today_due_bills_summary() -> dict[str, Any]:
+    today = today_iso()
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT amount
+            FROM bills
+            WHERE due_date = ?
+              AND is_paid = FALSE
+            """,
+            (today,),
+        ).fetchall()
+    total_amount = round_money(sum(float(row["amount"] or 0) for row in rows))
+    count = len(rows)
+    return {
+        "id": f"daily-bill-alert-{today}",
+        "date": today,
+        "count": count,
+        "total_amount": total_amount,
+        "has_alert": total_amount > 0,
+    }
+
+
 def get_bootstrap_data() -> dict[str, Any]:
     return {
         "products": list_products(),
@@ -2068,10 +2206,12 @@ def get_bootstrap_data() -> dict[str, Any]:
         "sales": list_sales(),
         "quotes": list_quotes(),
         "expenses": list_expenses(),
+        "bills": list_bills(),
         "checks": list_checks(),
         "stock_overview": get_stock_overview(),
         "nfe_issued": list_nfe_issued(),
         "fiscal_settings": get_fiscal_settings(),
+        "daily_bill_alert": get_today_due_bills_summary(),
         "daily_check_alert": get_today_due_checks_summary(),
         "options": {
             "payment_methods": PAYMENT_METHODS,
@@ -2079,6 +2219,7 @@ def get_bootstrap_data() -> dict[str, Any]:
             "product_units": PRODUCT_UNITS,
             "quote_item_units": QUOTE_ITEM_UNITS,
             "quote_statuses": QUOTE_STATUSES,
+            "bill_statuses": BILL_STATUSES,
             "check_statuses": CHECK_STATUSES,
             "stock_movement_types": STOCK_MOVEMENT_TYPES,
             "fiscal_environments": FISCAL_ENVIRONMENTS,

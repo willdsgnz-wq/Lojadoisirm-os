@@ -146,6 +146,21 @@ CREATE TABLE IF NOT EXISTS checks (
 );
 
 -- =========================
+-- BILLS
+-- =========================
+CREATE TABLE IF NOT EXISTS bills (
+    id BIGSERIAL PRIMARY KEY,
+    beneficiary TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
+    is_paid BOOLEAN NOT NULL DEFAULT FALSE,
+    notes TEXT,
+    paid_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
+);
+
+-- =========================
 -- STOCK MOVEMENTS
 -- =========================
 CREATE TABLE IF NOT EXISTS stock_movements (
@@ -264,6 +279,8 @@ CREATE INDEX IF NOT EXISTS idx_sales_date ON sales (sale_date);
 CREATE INDEX IF NOT EXISTS idx_quotes_date ON quotes (quote_date);
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (payment_date);
 CREATE INDEX IF NOT EXISTS idx_checks_due_date ON checks (due_date);
+CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills (due_date);
+CREATE INDEX IF NOT EXISTS idx_bills_is_paid ON bills (is_paid);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements (created_at);
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product_id ON stock_movements (product_id);
 CREATE INDEX IF NOT EXISTS idx_nfe_issued_sale_id ON nfe_issued (sale_id);

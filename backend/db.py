@@ -243,6 +243,19 @@ def run_runtime_migrations() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS bills (
+            id BIGSERIAL PRIMARY KEY,
+            beneficiary TEXT NOT NULL,
+            due_date TEXT NOT NULL,
+            amount DOUBLE PRECISION NOT NULL,
+            is_paid BOOLEAN NOT NULL DEFAULT FALSE,
+            notes TEXT,
+            paid_at TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS nfe_issued (
             id BIGSERIAL PRIMARY KEY,
             sale_id BIGINT REFERENCES sales (id) ON DELETE SET NULL,
@@ -355,6 +368,8 @@ def run_runtime_migrations() -> None:
         "CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku)",
         "CREATE INDEX IF NOT EXISTS idx_products_category ON products (category)",
         "CREATE INDEX IF NOT EXISTS idx_products_ncm ON products (ncm)",
+        "CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills (due_date)",
+        "CREATE INDEX IF NOT EXISTS idx_bills_is_paid ON bills (is_paid)",
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements (created_at)",
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_product_id ON stock_movements (product_id)",
         "CREATE INDEX IF NOT EXISTS idx_nfe_issued_sale_id ON nfe_issued (sale_id)",
