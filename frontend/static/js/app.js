@@ -133,7 +133,15 @@ const state = {
     products: { search: "", category: "", active_filter: "active", page: 1 },
     stock: { search: "", stock_filter: "" },
     customers: { search: "" },
-    sales: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
+    sales: {
+      preset: "month",
+      day: todayIso(),
+      start: monthStart,
+      end: todayIso(),
+      search: "",
+      payment_method: "",
+      show_advanced: false,
+    },
     quotes: { search: "", status: "" },
     nfe: { search: "", sale_id: "" },
     expenses: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
@@ -948,6 +956,7 @@ function getSearchResultsMarkup(scope, part = "default") {
     sales: {
       metrics: renderSalesMetricsSection,
       history: renderSalesHistoryPanel,
+      insights: renderSalesInsightsSection,
     },
     quotes: {
       default: renderQuotesListResults,
@@ -2403,8 +2412,15 @@ function renderCustomersListResults() {
 
 function getFilteredSalesData() {
   const period = getPeriod("sales");
-  const periodSales = filterByPeriod(state.data.sales, "sale_date", period);
-  const sales = getSimpleSearchRecords(periodSales, ["payment_method", "notes", "period", "sale_time"], state.filters.sales.search);
+  let periodSales = filterByPeriod(state.data.sales, "sale_date", period);
+  if (state.filters.sales.payment_method) {
+    periodSales = periodSales.filter((sale) => sale.payment_method === state.filters.sales.payment_method);
+  }
+  const sales = getSimpleSearchRecords(
+    periodSales,
+    ["payment_method", "notes", "period", "sale_time"],
+    state.filters.sales.search,
+  );
 
   return {
     period,
@@ -2414,15 +2430,303 @@ function getFilteredSalesData() {
 }
 
 
+function getSalesHeaderMetrics() {
+  const todaySales = state.data.sales.filter((sale) => sale.sale_date === localTodayIso());
+  const yesterdaySales = filterByPeriod(state.data.sales, "sale_date", getPresetRange("yesterday"));
+  const totalToday = sumBy(todaySales, (sale) => sale.total_amount);
+  const totalYesterday = sumBy(yesterdaySales, (sale) => sale.total_amount);
+  const todayCount = todaySales.length;
+  const ticketAverage = todayCount ? totalToday / todayCount : 0;
+  const uniqueCustomers = new Set(
+    todaySales
+      .map((sale) => String(sale.customer_name || "").trim())
+      .filter(Boolean),
+  );
+
+  let trendHelper = "Sem base comparativa com ontem";
+  if (totalYesterday > 0) {
+    const delta = ((totalToday - totalYesterday) / totalYesterday) * 100;
+    const signal = delta >= 0 ? "+" : "";
+    trendHelper = `${signal}${delta.toFixed(0)}% vs ontem`;
+  }
+
+  return {
+    totalToday,
+    todayCount,
+    ticketAverage,
+    attendedCustomers: uniqueCustomers.size || todayCount,
+    trendHelper,
+  };
+}
+
+
+function getSalesEvolutionData(sales, limit = 7) {
+  const grouped = new Map();
+  sales.forEach((sale) => {
+    if (!sale.sale_date) return;
+    grouped.set(sale.sale_date, (grouped.get(sale.sale_date) || 0) + Number(sale.total_amount || 0));
+  });
+
+  return [...grouped.entries()]
+    .sort((first, second) => first[0].localeCompare(second[0]))
+    .slice(-limit)
+    .map(([date, value]) => ({
+      label: formatDate(date).slice(0, 5),
+      value,
+      date,
+    }));
+}
+
+
+function renderSalesIcon(name) {
+  const icons = {
+    revenue: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 17.5V6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v11a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z" />
+        <path d="M8 12h8M12 8v8" />
+      </svg>
+    `,
+    ticket: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 7.5h10A2.5 2.5 0 0 1 19.5 10v4A2.5 2.5 0 0 1 17 16.5H7A2.5 2.5 0 0 1 4.5 14v-4A2.5 2.5 0 0 1 7 7.5Z" />
+        <path d="M9 10.5h6M9 13.5h3.5" />
+      </svg>
+    `,
+    customers: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 12a3.5 3.5 0 1 0-3.5-3.5A3.5 3.5 0 0 0 12 12Z" />
+        <path d="M5.5 18.5a6.5 6.5 0 0 1 13 0" />
+      </svg>
+    `,
+    conversion: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 15l4-4 3 3 5-6" />
+        <path d="M18 10V6h-4" />
+      </svg>
+    `,
+    morning: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" />
+      </svg>
+    `,
+    afternoon: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M17 15.5A5.5 5.5 0 1 1 12.5 7 4.5 4.5 0 0 0 17 15.5Z" />
+      </svg>
+    `,
+    total: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 12h14M12 5v14" />
+        <circle cx="12" cy="12" r="8.5" />
+      </svg>
+    `,
+    quantity: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 6.5h10A1.5 1.5 0 0 1 18.5 8v10A1.5 1.5 0 0 1 17 19.5H7A1.5 1.5 0 0 1 5.5 18V8A1.5 1.5 0 0 1 7 6.5Z" />
+        <path d="M9 10.5h6M9 14h6" />
+      </svg>
+    `,
+    filters: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16M7 12h10M10 17h4" />
+      </svg>
+    `,
+  };
+  return icons[name] || icons.revenue;
+}
+
+
+function renderSalesExecutiveMetric({ label, value, helper, icon }) {
+  return `
+    <article class="sales-kpi-card">
+      <div class="sales-kpi-card-top">
+        <span class="sales-kpi-label">${escapeHtml(label)}</span>
+        <span class="sales-kpi-icon" aria-hidden="true">${renderSalesIcon(icon)}</span>
+      </div>
+      <strong class="sales-kpi-value">${escapeHtml(String(value))}</strong>
+      <small class="sales-kpi-helper">${escapeHtml(helper)}</small>
+    </article>
+  `;
+}
+
+
+function renderSalesSummaryCard({ label, value, helper, icon, tone = "default" }) {
+  return `
+    <article class="sales-summary-card sales-summary-${tone}">
+      <div class="sales-summary-copy">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(String(value))}</strong>
+        <small>${escapeHtml(helper)}</small>
+      </div>
+      <div class="sales-summary-icon" aria-hidden="true">${renderSalesIcon(icon)}</div>
+    </article>
+  `;
+}
+
+
+function renderSalesExecutiveHeader() {
+  const { period } = getFilteredSalesData();
+  const metrics = getSalesHeaderMetrics();
+  const todayLabel = formatDate(localTodayIso());
+
+  return `
+    <section class="sales-executive-hero">
+      <div class="sales-executive-copy">
+        <span class="eyebrow">Resumo comercial</span>
+        <h2>Bem-vindo de volta!</h2>
+        <p>Acompanhe o caixa rápido, o ritmo do dia e os principais indicadores da operação sem sair da aba de vendas.</p>
+        <div class="sales-hero-pills">
+          <span class="sales-hero-pill">Período ativo: ${escapeHtml(period.label)}</span>
+          <span class="sales-hero-pill">Hoje: ${escapeHtml(todayLabel)}</span>
+          <span class="sales-hero-pill">Lançamento rápido no balcão</span>
+        </div>
+      </div>
+      <div class="sales-kpi-strip">
+        ${renderSalesExecutiveMetric({
+          label: "Vendas hoje",
+          value: formatMoney(metrics.totalToday),
+          helper: metrics.trendHelper,
+          icon: "revenue",
+        })}
+        ${renderSalesExecutiveMetric({
+          label: "Ticket médio",
+          value: formatMoney(metrics.ticketAverage),
+          helper: `${formatNumber(metrics.todayCount)} venda(s) no dia`,
+          icon: "ticket",
+        })}
+        ${renderSalesExecutiveMetric({
+          label: "Clientes atendidos",
+          value: formatNumber(metrics.attendedCustomers),
+          helper: "Baseado nos registros de hoje",
+          icon: "customers",
+        })}
+        ${renderSalesExecutiveMetric({
+          label: "Conversão",
+          value: "--",
+          helper: "Disponível ao integrar atendimentos",
+          icon: "conversion",
+        })}
+      </div>
+    </section>
+  `;
+}
+
+
+function renderSalesFiltersBar() {
+  const filter = state.filters.sales;
+  const activePeriod = getPeriod("sales");
+  const salesPaymentMethods = state.data.options.sales_payment_methods?.length
+    ? state.data.options.sales_payment_methods
+    : state.data.options.payment_methods;
+  const showAdvanced = filter.show_advanced || ["day", "custom"].includes(filter.preset);
+
+  return `
+    <section class="panel toolbar-panel sales-filter-panel" data-filter-scope="sales">
+      <div class="sales-filter-row">
+        <label class="toolbar-field sales-filter-period">
+          <span>Período</span>
+          <select name="preset">
+            ${[
+              { value: "today", label: "Hoje" },
+              { value: "day", label: "Dia específico" },
+              { value: "yesterday", label: "Ontem" },
+              { value: "week", label: "Esta semana" },
+              { value: "month", label: "Este mês" },
+              { value: "year", label: "Este ano" },
+              { value: "custom", label: "Período personalizado" },
+            ].map((item) => `
+              <option value="${item.value}" ${filter.preset === item.value ? "selected" : ""}>${item.label}</option>
+            `).join("")}
+          </select>
+        </label>
+
+        <label class="toolbar-field toolbar-search sales-filter-search">
+          <span>Buscar</span>
+          <input type="search" name="search" value="${escapeHtml(filter.search || "")}" placeholder="Buscar por pagamento, horário, período ou observação">
+        </label>
+
+        <label class="toolbar-field sales-filter-payment">
+          <span>Forma de pagamento</span>
+          <select name="payment_method">
+            <option value="">Todas</option>
+            ${renderPaymentOptions(filter.payment_method || "", salesPaymentMethods)}
+          </select>
+        </label>
+
+        <button
+          type="button"
+          class="btn btn-secondary sales-filter-toggle"
+          data-action="toggle-sales-filters"
+          aria-expanded="${showAdvanced ? "true" : "false"}"
+        >
+          <span class="sales-filter-toggle-icon" aria-hidden="true">${renderSalesIcon("filters")}</span>
+          Mais filtros
+        </button>
+      </div>
+
+      ${showAdvanced ? `
+        <div class="sales-filter-advanced">
+          ${filter.preset === "day" ? `
+            <label class="toolbar-field">
+              <span>Dia específico</span>
+              <input type="date" name="day" value="${escapeHtml(filter.day || localTodayIso())}">
+            </label>
+          ` : ""}
+          ${filter.preset === "custom" ? `
+            <label class="toolbar-field">
+              <span>Início</span>
+              <input type="date" name="start" value="${escapeHtml(filter.start || monthStart)}">
+            </label>
+            <label class="toolbar-field">
+              <span>Fim</span>
+              <input type="date" name="end" value="${escapeHtml(filter.end || localTodayIso())}">
+            </label>
+          ` : ""}
+          <div class="sales-filter-chip-row">
+            <span class="sales-filter-chip">Período ativo: ${escapeHtml(activePeriod.label)}</span>
+            <span class="sales-filter-chip">Pagamento: ${escapeHtml(filter.payment_method || "todas")}</span>
+          </div>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+
 function renderSalesMetricsSection() {
   const { period, shiftSummary } = getFilteredSalesData();
 
   return `
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Vendas da manhã", value: formatMoney(shiftSummary.totalMorning), helper: `${shiftSummary.countMorning} venda(s)`, tone: "brand" })}
-      ${renderMetricCard({ label: "Vendas da tarde", value: formatMoney(shiftSummary.totalAfternoon), helper: `${shiftSummary.countAfternoon} venda(s)` })}
-      ${renderMetricCard({ label: "Total do período", value: formatMoney(shiftSummary.total), helper: period.label, tone: "success" })}
-      ${renderMetricCard({ label: "Quantidade total", value: formatNumber(shiftSummary.count), helper: "Histórico filtrado" })}
+    <section class="sales-summary-grid">
+      ${renderSalesSummaryCard({
+        label: "Vendas da manhã",
+        value: formatMoney(shiftSummary.totalMorning),
+        helper: `${shiftSummary.countMorning} venda(s) até 12:00`,
+        icon: "morning",
+        tone: "morning",
+      })}
+      ${renderSalesSummaryCard({
+        label: "Vendas da tarde",
+        value: formatMoney(shiftSummary.totalAfternoon),
+        helper: `${shiftSummary.countAfternoon} venda(s) após 12:00`,
+        icon: "afternoon",
+        tone: "afternoon",
+      })}
+      ${renderSalesSummaryCard({
+        label: "Total do período",
+        value: formatMoney(shiftSummary.total),
+        helper: period.label,
+        icon: "total",
+        tone: "total",
+      })}
+      ${renderSalesSummaryCard({
+        label: "Quantidade total",
+        value: formatNumber(shiftSummary.count),
+        helper: "Histórico filtrado",
+        icon: "quantity",
+        tone: "count",
+      })}
     </section>
   `;
 }
@@ -2432,12 +2736,13 @@ function renderSalesHistoryPanel() {
   const { period, sales } = getFilteredSalesData();
 
   return `
-    <article class="panel">
-      <div class="section-header">
+    <article class="panel sales-history-card">
+      <div class="section-header sales-history-header">
         <div>
           <h3>Histórico de vendas</h3>
-          <p>${period.label}</p>
+          <p>${sales.length} registro(s) encontrados em ${period.label.toLowerCase()}.</p>
         </div>
+        <button type="button" class="btn btn-secondary btn-compact sales-history-link" data-action="show-all-sales-history">Ver todas</button>
       </div>
       ${sales.length ? `
         <div class="table-wrapper">
@@ -2468,6 +2773,40 @@ function renderSalesHistoryPanel() {
         </div>
       ` : renderEmptyState("Nenhuma venda encontrada", "Cadastre vendas ou altere o período do filtro.")}
     </article>
+  `;
+}
+
+
+function renderSalesInsightsSection() {
+  const { period, sales, shiftSummary } = getFilteredSalesData();
+  const paymentTotals = getPaymentTotals(sales, "payment_method", "total_amount").map((row) => ({
+    ...row,
+    helper: `${sales.filter((sale) => sale.payment_method === row.label).length} venda(s)`,
+  }));
+  const periodDistribution = [
+    { label: "Manhã", value: shiftSummary.totalMorning },
+    { label: "Tarde", value: shiftSummary.totalAfternoon },
+  ];
+  const evolutionData = getSalesEvolutionData(sales);
+
+  return `
+    <section class="sales-insights-grid">
+      ${renderStatList({
+        title: "Vendas por forma de pagamento",
+        subtitle: `Distribuição do período ${period.label.toLowerCase()}`,
+        rows: paymentTotals,
+      })}
+      ${renderBarChart({
+        title: "Vendas por período do dia",
+        subtitle: `${shiftSummary.countMorning} venda(s) de manhã e ${shiftSummary.countAfternoon} à tarde`,
+        data: periodDistribution,
+      })}
+      ${renderBarChart({
+        title: "Evolução das vendas",
+        subtitle: "Últimos dias dentro do filtro atual",
+        data: evolutionData,
+      })}
+    </section>
   `;
 }
 
@@ -3353,6 +3692,7 @@ function renderCustomersPage() {
 
 function renderSalesPage() {
   const editing = state.editing.sales;
+  const { period } = getFilteredSalesData();
   const currentDate = editing?.sale_date || localTodayIso();
   const currentTime = editing?.sale_time || currentTimeValue();
   const currentPeriod = inferSalePeriod(currentTime);
@@ -3363,34 +3703,29 @@ function renderSalesPage() {
   const draftAmount = editing?.total_amount || editing?.amount || 0;
 
   return `
-    ${renderHero(
-      "Vendas rápidas",
-      "Tela de caixa rápido para registrar vendas em poucos toques, sem itens e sem burocracia.",
-    )}
+    ${renderSalesExecutiveHeader()}
 
-    ${renderPeriodToolbar("sales", {
-      showSearch: true,
-      searchPlaceholder: "Buscar por pagamento, horário, período ou observação",
-    })}
+    ${renderSalesFiltersBar()}
 
     <div data-search-results-scope="sales" data-search-results-part="metrics">${renderSalesMetricsSection()}</div>
 
-    <section class="page-grid page-grid-2">
-      <article class="panel">
+    <section class="page-grid page-grid-2 sales-main-grid">
+      <article class="panel sales-form-card">
         <div class="section-header">
           <div>
-            <h3>${editing ? "Editar venda" : "Nova venda"}</h3>
-            <p>${editing ? "Ajuste o valor, a forma de pagamento, a data e o horário da venda selecionada." : "Informe valor, pagamento, data e hora para registrar a venda rapidamente."}</p>
+            <h3>${editing ? "Editar venda rápida" : "Nova venda rápida"}</h3>
+            <p>${editing ? "Atualize o lançamento selecionado mantendo o fluxo simples do caixa." : "Preencha valor, pagamento, data e hora para registrar uma venda em poucos segundos."}</p>
           </div>
+          <span class="sales-section-chip">${escapeHtml(period.label)}</span>
         </div>
         <form id="sales-form" class="form-grid quick-sale-form">
           <input type="hidden" name="id" value="${editing?.id ?? ""}">
           ${renderFormFeedback("sales")}
-          <label class="field-span-2 quick-sale-amount">
+          <label class="field-span-2 quick-sale-amount sales-amount-field">
             <span>Valor da venda</span>
             ${renderMoneyInput({ name: "amount", value: draftAmount, required: true, classes: "money-input-large" })}
           </label>
-          <label>
+          <label class="sales-payment-field">
             <span>Meio de pagamento</span>
             <select name="payment_method" required>
               ${renderPaymentOptions(selectedPaymentMethod, salesPaymentMethods)}
@@ -3412,12 +3747,23 @@ function renderSalesPage() {
             </div>
           </div>
           <div class="field-span-2 quick-sale-summary">
-            <div class="quick-summary-card">
-              <span>Data e horário da venda</span>
-              <strong><span data-sale-date-summary>${escapeHtml(formatDate(currentDate))}</span> às <span data-sale-time-summary>${escapeHtml(currentTime)}</span></strong>
-              <small data-sale-date-caption>Os campos já vêm preenchidos, mas você pode editar manualmente antes de salvar.</small>
+            <div class="quick-summary-card-grid sales-summary-support-grid">
+              <div class="quick-summary-card">
+                <span>Data e horário da venda</span>
+                <strong><span data-sale-date-summary>${escapeHtml(formatDate(currentDate))}</span> às <span data-sale-time-summary>${escapeHtml(currentTime)}</span></strong>
+                <small data-sale-date-caption>Os campos já vêm preenchidos, mas você pode editar manualmente antes de salvar.</small>
+              </div>
+              <div class="quick-summary-card">
+                <span>Status do lançamento</span>
+                <strong>${editing ? "Modo edição" : "Pronto para registrar"}</strong>
+                <small>${editing ? "Salve as alterações quando terminar de ajustar a venda." : "Use este formulário para lançar várias vendas em sequência com rapidez."}</small>
+              </div>
             </div>
           </div>
+          <label class="field-span-2 sales-notes-field">
+            <span>Observações</span>
+            <textarea name="notes" rows="3" placeholder="Opcional: detalhe forma de recebimento, balcão ou observação interna.">${escapeHtml(toFormValue(editing?.notes))}</textarea>
+          </label>
 
           <div class="form-actions field-span-2">
             <button type="submit" class="btn btn-primary">${editing ? "Salvar venda" : "Registrar venda"}</button>
@@ -3427,6 +3773,8 @@ function renderSalesPage() {
       </article>
       <div data-search-results-scope="sales" data-search-results-part="history">${renderSalesHistoryPanel()}</div>
     </section>
+
+    <div data-search-results-scope="sales" data-search-results-part="insights">${renderSalesInsightsSection()}</div>
   `;
 }
 
@@ -4525,6 +4873,32 @@ function handlePageClick(event) {
         }
         updateSaleTotals(form);
       }
+    },
+    "toggle-sales-filters": () => {
+      state.filters.sales.show_advanced = !state.filters.sales.show_advanced;
+      renderCurrentPage();
+    },
+    "show-all-sales-history": () => {
+      const salesDates = state.data.sales
+        .map((sale) => sale.sale_date)
+        .filter(Boolean)
+        .sort();
+
+      state.filters.sales.search = "";
+      state.filters.sales.payment_method = "";
+      state.filters.sales.show_advanced = true;
+
+      if (salesDates.length) {
+        state.filters.sales.preset = "custom";
+        state.filters.sales.start = salesDates[0];
+        state.filters.sales.end = salesDates[salesDates.length - 1];
+      } else {
+        state.filters.sales.preset = "month";
+        state.filters.sales.start = monthStart;
+        state.filters.sales.end = todayIso();
+      }
+
+      renderCurrentPage();
     },
     "edit-product": () => editEntity("products", id),
     "edit-customer": () => editEntity("customers", id),
