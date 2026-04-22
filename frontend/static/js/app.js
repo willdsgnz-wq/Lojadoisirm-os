@@ -2998,7 +2998,7 @@ function renderProductsPage() {
           </div>
         </div>
         <section class="panel toolbar-panel" data-filter-scope="products">
-          <div class="toolbar-row">
+          <div class="toolbar-row products-toolbar-row">
             <label class="toolbar-field toolbar-search">
               <span>Busca</span>
               <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: cimento, MAT-001, ferragem, NCM">
@@ -3019,7 +3019,7 @@ function renderProductsPage() {
               </select>
             </label>
             <div class="toolbar-field products-import-field">
-              <span>Importar planilha</span>
+              <span>Arquivo</span>
               <div class="inline-actions">
                 <input type="file" id="products-import-file" accept=".xlsx,.xlsm,.csv">
                 <button type="button" class="btn btn-secondary" data-action="import-products-sheet">Importar</button>

@@ -2181,8 +2181,38 @@ textarea {
   padding: 10px 12px;
 }
 
+.products-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+
+.products-toolbar-row .toolbar-field {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.products-toolbar-row .toolbar-search {
+  flex: 1.3 1 260px;
+}
+
+.products-toolbar-row .products-import-field {
+  flex: 1.2 1 260px;
+}
+
+.products-import-field .inline-actions {
+  flex-wrap: wrap;
+}
+
+.products-import-field input[type="file"] {
+  min-width: 180px;
+  width: auto;
+  flex: 1 1 180px;
+}
+
 .products-import-field {
-  min-width: min(100%, 320px);
+  min-width: 0;
 }
 
 .table-pagination {
