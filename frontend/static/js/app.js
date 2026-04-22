@@ -47,6 +47,7 @@ const pageTitles = {
 
 const BRAND_LOGO_PATH = "/assets/brand/logo_dois_irmaos_final.png";
 const PRODUCTS_PER_PAGE = 10;
+const SALES_HISTORY_PER_PAGE = 5;
 
 const monthStart = (() => {
   const now = new Date();
@@ -140,6 +141,7 @@ const state = {
       end: todayIso(),
       search: "",
       payment_method: "",
+      page: 1,
       show_advanced: false,
     },
     quotes: { search: "", status: "" },
@@ -2734,6 +2736,21 @@ function renderSalesMetricsSection() {
 
 function renderSalesHistoryPanel() {
   const { period, sales } = getFilteredSalesData();
+  const pagination = paginateRecords(sales, state.filters.sales.page, SALES_HISTORY_PER_PAGE);
+  const pagedSales = pagination.items;
+  const pageButtons = Array.from({ length: pagination.totalPages }, (_, index) => index + 1)
+    .map((page) => `
+      <button
+        type="button"
+        class="btn btn-secondary btn-compact sales-pagination-button ${page === pagination.page ? "active" : ""}"
+        data-action="sales-go-page"
+        data-page="${page}"
+        ${page === pagination.page ? 'aria-current="page"' : ""}
+      >
+        ${page}
+      </button>
+    `)
+    .join("");
 
   return `
     <article class="panel sales-history-card">
@@ -2758,7 +2775,7 @@ function renderSalesHistoryPanel() {
               </tr>
             </thead>
             <tbody>
-              ${sales.map((sale) => `
+              ${pagedSales.map((sale) => `
                 <tr>
                   <td>${formatDate(sale.sale_date)}</td>
                   <td>${escapeHtml(sale.sale_time || "-")}</td>
@@ -2770,6 +2787,16 @@ function renderSalesHistoryPanel() {
               `).join("")}
             </tbody>
           </table>
+        </div>
+        <div class="table-pagination sales-history-pagination">
+          <span class="sales-pagination-summary">Página ${pagination.page} de ${pagination.totalPages} • ${pagination.totalItems} venda(s)</span>
+          <div class="sales-pagination-controls">
+            <button type="button" class="btn btn-secondary btn-compact" data-action="sales-prev-page" ${pagination.page <= 1 ? "disabled" : ""}>Anterior</button>
+            <div class="sales-pagination-buttons">
+              ${pageButtons}
+            </div>
+            <button type="button" class="btn btn-secondary btn-compact" data-action="sales-next-page" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Próxima</button>
+          </div>
         </div>
       ` : renderEmptyState("Nenhuma venda encontrada", "Cadastre vendas ou altere o período do filtro.")}
     </article>
@@ -3695,7 +3722,6 @@ function renderSalesPage() {
   const { period } = getFilteredSalesData();
   const currentDate = editing?.sale_date || localTodayIso();
   const currentTime = editing?.sale_time || currentTimeValue();
-  const currentPeriod = inferSalePeriod(currentTime);
   const salesPaymentMethods = state.data.options.sales_payment_methods?.length
     ? state.data.options.sales_payment_methods
     : state.data.options.payment_methods;
@@ -3740,30 +3766,7 @@ function renderSalesPage() {
               <span>Hora da venda</span>
               <input type="time" name="sale_time" value="${currentTime}" step="60" required>
             </label>
-            <div class="quick-sale-period-lockup">
-              <span>Período calculado</span>
-              <strong data-sale-period-summary>${escapeHtml(currentPeriod)}</strong>
-              <small>Calculado automaticamente pela hora informada.</small>
-            </div>
           </div>
-          <div class="field-span-2 quick-sale-summary">
-            <div class="quick-summary-card-grid sales-summary-support-grid">
-              <div class="quick-summary-card">
-                <span>Data e horário da venda</span>
-                <strong><span data-sale-date-summary>${escapeHtml(formatDate(currentDate))}</span> às <span data-sale-time-summary>${escapeHtml(currentTime)}</span></strong>
-                <small data-sale-date-caption>Os campos já vêm preenchidos, mas você pode editar manualmente antes de salvar.</small>
-              </div>
-              <div class="quick-summary-card">
-                <span>Status do lançamento</span>
-                <strong>${editing ? "Modo edição" : "Pronto para registrar"}</strong>
-                <small>${editing ? "Salve as alterações quando terminar de ajustar a venda." : "Use este formulário para lançar várias vendas em sequência com rapidez."}</small>
-              </div>
-            </div>
-          </div>
-          <label class="field-span-2 sales-notes-field">
-            <span>Observações</span>
-            <textarea name="notes" rows="3" placeholder="Opcional: detalhe forma de recebimento, balcão ou observação interna.">${escapeHtml(toFormValue(editing?.notes))}</textarea>
-          </label>
 
           <div class="form-actions field-span-2">
             <button type="submit" class="btn btn-primary">${editing ? "Salvar venda" : "Registrar venda"}</button>
@@ -4830,6 +4833,18 @@ function handlePageClick(event) {
       state.filters.products.page = (state.filters.products.page || 1) + 1;
       renderCurrentPage();
     },
+    "sales-prev-page": () => {
+      state.filters.sales.page = Math.max((state.filters.sales.page || 1) - 1, 1);
+      renderFilterResultsScope("sales");
+    },
+    "sales-next-page": () => {
+      state.filters.sales.page = (state.filters.sales.page || 1) + 1;
+      renderFilterResultsScope("sales");
+    },
+    "sales-go-page": () => {
+      state.filters.sales.page = Math.max(Number(button.dataset.page || 1), 1);
+      renderFilterResultsScope("sales");
+    },
     "import-products-sheet": () => {
       void importProductsSheet();
     },
@@ -4886,6 +4901,7 @@ function handlePageClick(event) {
 
       state.filters.sales.search = "";
       state.filters.sales.payment_method = "";
+      state.filters.sales.page = 1;
       state.filters.sales.show_advanced = true;
 
       if (salesDates.length) {
@@ -4984,6 +5000,9 @@ function handlePageChange(event) {
     const scope = toolbar.dataset.filterScope;
     if (scope && target.name) {
       state.filters[scope][target.name] = target.value;
+      if (scope === "sales" && target.name !== "page") {
+        state.filters.sales.page = 1;
+      }
       if (scope === "products" && ["category", "active_filter"].includes(target.name)) {
         state.filters.products.page = 1;
       }
@@ -5042,6 +5061,9 @@ function handlePageInput(event) {
   if (toolbar && target.name === "search") {
     const scope = toolbar.dataset.filterScope;
     state.filters[scope][target.name] = target.value;
+    if (scope === "sales") {
+      state.filters.sales.page = 1;
+    }
     if (scope === "products") {
       state.filters.products.page = 1;
     }
