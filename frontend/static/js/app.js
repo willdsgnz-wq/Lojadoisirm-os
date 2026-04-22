@@ -27,21 +27,27 @@ const BRAND_NAME = "MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS"
 const QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"];
 const NOTIFICATION_SESSION_KEY = "doisirmaos.notifications.v1";
 const TOP_ALERT_SESSION_KEY = "doisirmaos.top-alerts.v1";
+const SIDEBAR_PREFERENCE_KEY = "doisirmaos.sidebar.v1";
 const NOTIFICATION_GREETING_NAME = "Sergio";
 const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})$/;
+const SIDEBAR_MOBILE_QUERY = window.matchMedia("(max-width: 960px)");
 
 const pageTitles = {
   dashboard: "Dashboard",
   products: "Produtos",
+  stock: "Estoque",
+  movements: "Movimentações",
   customers: "Clientes",
   sales: "Vendas",
   quotes: "Orçamentos",
+  nfe: "NF-e",
   expenses: "Contas Pagas",
   checks: "Cheques",
   reports: "Relatórios",
 };
 
 const BRAND_LOGO_PATH = "/assets/brand/logo_dois_irmaos_final.png";
+const PRODUCTS_PER_PAGE = 10;
 
 const monthStart = (() => {
   const now = new Date();
@@ -55,9 +61,17 @@ const state = {
     deferredPrompt: null,
     installReady: false,
   },
+  layout: {
+    sidebarCollapsed: false,
+    sidebarMobileOpen: false,
+  },
   notifications: {
     items: [],
     open: false,
+  },
+  nfe: {
+    selectedSaleId: "",
+    validation: null,
   },
   topAlert: null,
   data: {
@@ -67,6 +81,15 @@ const state = {
     quotes: [],
     expenses: [],
     checks: [],
+    stock_movements: [],
+    stock_overview: {
+      total_products: 0,
+      low_stock_products: 0,
+      out_of_stock_products: 0,
+      estimated_sale_value: 0,
+    },
+    nfe_issued: [],
+    fiscal_settings: {},
     options: {
       payment_methods: [],
       sales_payment_methods: [],
@@ -74,6 +97,9 @@ const state = {
       quote_item_units: [],
       quote_statuses: [],
       check_statuses: [],
+      stock_movement_types: [],
+      fiscal_environments: [],
+      fiscal_provider_options: [],
     },
   },
   editing: {
@@ -86,18 +112,23 @@ const state = {
   },
   formFeedback: {
     products: null,
+    stock: null,
     customers: null,
     sales: null,
     quotes: null,
     expenses: null,
     checks: null,
+    fiscal: null,
   },
   filters: {
     dashboard: { preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
-    products: { search: "" },
+    products: { search: "", category: "", active_filter: "active", page: 1 },
+    stock: { search: "", stock_filter: "" },
+    movements: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", movement_type: "" },
     customers: { search: "" },
     sales: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
     quotes: { search: "", status: "" },
+    nfe: { search: "", sale_id: "" },
     expenses: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
     checks: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
     reports: { module: "sales", preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
@@ -108,11 +139,13 @@ const state = {
 const searchTimers = new Map();
 const formScopeMap = {
   "products-form": "products",
+  "stock-form": "stock",
   "customers-form": "customers",
   "sales-form": "sales",
   "quotes-form": "quotes",
   "expenses-form": "expenses",
   "checks-form": "checks",
+  "fiscal-settings-form": "fiscal",
 };
 
 const elements = {
@@ -146,6 +179,7 @@ document.addEventListener("DOMContentLoaded", init);
 
 
 async function init() {
+  initializeSidebarLayout();
   bindGlobalEvents();
   registerPwaSupport();
 
@@ -168,9 +202,9 @@ function bindGlobalEvents() {
   elements.notificationsClearButton?.addEventListener("click", handleClearNotifications);
   elements.notificationsList?.addEventListener("click", handleNotificationListClick);
   elements.topAlertContainer?.addEventListener("click", handleTopAlertClick);
-  elements.openSidebarButton.addEventListener("click", () => toggleSidebar(true));
-  elements.closeSidebarButton.addEventListener("click", () => toggleSidebar(false));
-  elements.sidebarBackdrop.addEventListener("click", () => toggleSidebar(false));
+  elements.openSidebarButton?.addEventListener("click", handleSidebarToggle);
+  elements.closeSidebarButton?.addEventListener("click", () => setMobileSidebarOpen(false));
+  elements.sidebarBackdrop?.addEventListener("click", () => setMobileSidebarOpen(false));
 
   elements.navLinks.forEach((link) => {
     link.addEventListener("click", () => {
@@ -189,14 +223,24 @@ function bindGlobalEvents() {
   document.addEventListener("keydown", handleGlobalKeyDown);
   window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
   window.addEventListener("appinstalled", handleAppInstalled);
+
+  if (typeof SIDEBAR_MOBILE_QUERY.addEventListener === "function") {
+    SIDEBAR_MOBILE_QUERY.addEventListener("change", handleSidebarViewportChange);
+  } else if (typeof SIDEBAR_MOBILE_QUERY.addListener === "function") {
+    SIDEBAR_MOBILE_QUERY.addListener(handleSidebarViewportChange);
+  }
 }
 
 
 function showLogin() {
   elements.loginView.classList.remove("hidden");
   elements.appShell.classList.add("hidden");
+  state.layout.sidebarMobileOpen = false;
+  applySidebarLayout();
   state.notifications.items = [];
   state.notifications.open = false;
+  state.nfe.validation = null;
+  state.nfe.selectedSaleId = "";
   state.topAlert = null;
   renderNotifications();
   renderTopAlert();
@@ -208,6 +252,7 @@ function showApp() {
   elements.loginView.classList.add("hidden");
   elements.appShell.classList.remove("hidden");
   elements.currentUserName.textContent = state.user?.full_name || "Administrador";
+  applySidebarLayout();
   renderNotifications();
   renderTopAlert();
   updateInstallButtonVisibility();
@@ -292,6 +337,107 @@ function updateInstallButtonVisibility() {
   const appVisible = !elements.appShell.classList.contains("hidden");
   const shouldShow = appVisible && !isStandaloneMode() && (state.pwa.installReady || isMobileInstallSurface());
   elements.installAppButton.classList.toggle("hidden", !shouldShow);
+}
+
+
+function initializeSidebarLayout() {
+  state.layout.sidebarCollapsed = readSidebarPreference();
+  state.layout.sidebarMobileOpen = false;
+  hydrateSidebarMetadata();
+  applySidebarLayout();
+}
+
+
+function hydrateSidebarMetadata() {
+  elements.navLinks.forEach((link) => {
+    const label = link.querySelector(".nav-link-label")?.textContent?.trim() || pageTitles[link.dataset.page] || "Abrir página";
+    link.dataset.tooltip = label;
+    link.setAttribute("title", label);
+    link.setAttribute("aria-label", label);
+  });
+}
+
+
+function isMobileSidebarViewport() {
+  return SIDEBAR_MOBILE_QUERY.matches;
+}
+
+
+function readSidebarPreference() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === "collapsed";
+  } catch {
+    return false;
+  }
+}
+
+
+function writeSidebarPreference(collapsed) {
+  try {
+    window.localStorage.setItem(SIDEBAR_PREFERENCE_KEY, collapsed ? "collapsed" : "expanded");
+  } catch {
+    // Se o navegador bloquear localStorage, o menu continua funcionando só nesta sessão.
+  }
+}
+
+
+function setSidebarCollapsed(collapsed, { persist = true } = {}) {
+  state.layout.sidebarCollapsed = Boolean(collapsed);
+  if (persist) {
+    writeSidebarPreference(state.layout.sidebarCollapsed);
+  }
+  if (!isMobileSidebarViewport()) {
+    applySidebarLayout();
+  }
+}
+
+
+function setMobileSidebarOpen(open) {
+  state.layout.sidebarMobileOpen = Boolean(open);
+  applySidebarLayout();
+}
+
+
+function handleSidebarToggle() {
+  if (isMobileSidebarViewport()) {
+    setMobileSidebarOpen(!state.layout.sidebarMobileOpen);
+    return;
+  }
+  setSidebarCollapsed(!state.layout.sidebarCollapsed);
+}
+
+
+function handleSidebarViewportChange() {
+  state.layout.sidebarMobileOpen = false;
+  applySidebarLayout();
+}
+
+
+function applySidebarLayout() {
+  const isMobile = isMobileSidebarViewport();
+  const isAppVisible = !elements.appShell.classList.contains("hidden");
+  const isCollapsed = !isMobile && state.layout.sidebarCollapsed;
+  const isMobileOpen = isMobile && state.layout.sidebarMobileOpen && isAppVisible;
+  const sidebarExpanded = isMobile ? isMobileOpen : !isCollapsed;
+
+  elements.appShell.classList.toggle("sidebar-collapsed", isCollapsed);
+  elements.appShell.classList.toggle("sidebar-mobile-open", isMobileOpen);
+  elements.sidebar?.classList.toggle("open", isMobileOpen);
+  elements.sidebarBackdrop?.classList.toggle("visible", isMobileOpen);
+  document.body.classList.toggle("sidebar-mobile-open", isMobileOpen);
+
+  if (elements.openSidebarButton) {
+    const label = isMobile
+      ? (isMobileOpen ? "Fechar menu" : "Abrir menu")
+      : (isCollapsed ? "Expandir menu lateral" : "Recolher menu lateral");
+    elements.openSidebarButton.setAttribute("aria-label", label);
+    elements.openSidebarButton.setAttribute("title", label);
+    elements.openSidebarButton.setAttribute("aria-expanded", String(sidebarExpanded));
+  }
+
+  if (elements.closeSidebarButton) {
+    elements.closeSidebarButton.setAttribute("aria-hidden", String(!isMobileOpen));
+  }
 }
 
 
@@ -574,9 +720,15 @@ function handleDocumentClick(event) {
 
 
 function handleGlobalKeyDown(event) {
-  if (event.key === "Escape" && state.notifications.open) {
+  if (event.key !== "Escape") return;
+
+  if (state.notifications.open) {
     state.notifications.open = false;
     renderNotifications();
+  }
+
+  if (state.layout.sidebarMobileOpen) {
+    setMobileSidebarOpen(false);
   }
 }
 
@@ -646,6 +798,8 @@ async function handleLogout() {
     state.user = null;
     state.notifications.items = [];
     state.notifications.open = false;
+    state.nfe.validation = null;
+    state.nfe.selectedSaleId = "";
     state.topAlert = null;
     showLogin();
     showToast("Sessão encerrada.", "info");
@@ -664,6 +818,10 @@ async function loadData() {
     quotes: payload.quotes || [],
     expenses: payload.expenses || [],
     checks: payload.checks || [],
+    stock_movements: payload.stock_movements || [],
+    stock_overview: payload.stock_overview || state.data.stock_overview,
+    nfe_issued: payload.nfe_issued || [],
+    fiscal_settings: payload.fiscal_settings || {},
     options: payload.options || state.data.options,
   };
   elements.currentUserName.textContent = state.user.full_name;
@@ -676,13 +834,9 @@ async function loadData() {
 function setPage(page) {
   state.page = page;
   renderCurrentPage();
-  toggleSidebar(false);
-}
-
-
-function toggleSidebar(open) {
-  elements.sidebar.classList.toggle("open", open);
-  elements.sidebarBackdrop.classList.toggle("visible", open);
+  if (isMobileSidebarViewport()) {
+    setMobileSidebarOpen(false);
+  }
 }
 
 
@@ -690,15 +844,24 @@ function renderCurrentPage() {
   elements.pageTitle.textContent = pageTitles[state.page] || "Sistema";
   document.title = `${BRAND_NAME} | ${pageTitles[state.page] || "Sistema"}`;
   elements.navLinks.forEach((link) => {
-    link.classList.toggle("active", link.dataset.page === state.page);
+    const isActive = link.dataset.page === state.page;
+    link.classList.toggle("active", isActive);
+    if (isActive) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
   });
 
   const renderMap = {
     dashboard: renderDashboardPage,
     products: renderProductsPage,
+    stock: renderStockPage,
+    movements: renderMovementsPage,
     customers: renderCustomersPage,
     sales: renderSalesPage,
     quotes: renderQuotesPage,
+    nfe: renderNfePage,
     expenses: renderExpensesPage,
     checks: renderChecksPage,
     reports: renderReportsPage,
@@ -706,6 +869,10 @@ function renderCurrentPage() {
 
   elements.pageContent.innerHTML = renderMap[state.page]();
   syncMoneyInputs(elements.pageContent);
+  const quotesForm = document.getElementById("quotes-form");
+  if (quotesForm) updateQuoteTotals(quotesForm);
+  const salesForm = document.getElementById("sales-form");
+  if (salesForm) updateSaleTotals(salesForm);
   updateInstallButtonVisibility();
   restoreFocusField();
 }
@@ -901,8 +1068,8 @@ function isValidNumber(value, { min = 0, allowZero = true } = {}) {
 
 function validateSimplePayload(scope, payload) {
   if (scope === "products") {
-    if (!payload.name || !payload.code || !payload.category || !payload.unit) {
-      throw new Error("Preencha nome, código, categoria e unidade do produto.");
+    if (!payload.name || !(payload.sku || payload.code) || !payload.category || !payload.unit) {
+      throw new Error("Preencha SKU, nome, categoria e unidade do produto.");
     }
     if (!isValidNumber(payload.cost_price, { min: 0 }) || !isValidNumber(payload.sale_price, { min: 0 })) {
       throw new Error("Informe preços válidos para o produto.");
@@ -1237,6 +1404,9 @@ function statusTone(status) {
   const normalized = (status || "").toLowerCase();
   if (normalized.includes("atras")) return "danger";
   if (normalized.includes("pend")) return "warning";
+  if (normalized.includes("entrada")) return "success";
+  if (normalized.includes("saida")) return "warning";
+  if (normalized.includes("ajuste")) return "brand";
   if (normalized.includes("compens")) return "success";
   if (normalized.includes("aprov")) return "success";
   if (normalized.includes("cancel")) return "neutral";
@@ -1282,15 +1452,28 @@ function renderQuoteTableActions(id) {
 
 
 function renderProductOptions(selectedId = "") {
+  const products = [...getActiveProducts()];
+  const selectedProduct = getProductById(selectedId);
+  if (selectedProduct && !products.some((product) => String(product.id) === String(selectedId))) {
+    products.unshift(selectedProduct);
+  }
+
   return `
     <option value="">Selecione</option>
-    ${state.data.products.map((product) => `
+    ${products.map((product) => `
       <option
         value="${product.id}"
         data-price="${product.sale_price}"
+        data-unit="${escapeHtml(product.unit || "UN")}"
+        data-name="${escapeHtml(product.name || "")}"
+        data-sku="${escapeHtml(product.sku || product.code || "")}"
+        data-ncm="${escapeHtml(product.ncm || "")}"
+        data-cfop="${escapeHtml(product.cfop_default || "")}"
+        data-origin="${escapeHtml(product.origin || "")}"
+        data-csosn="${escapeHtml(product.csosn || "")}"
         ${String(selectedId) === String(product.id) ? "selected" : ""}
       >
-        ${escapeHtml(`${product.code} - ${product.name}`)}
+        ${escapeHtml(`${product.sku || product.code} - ${product.name}`)}
       </option>
     `).join("")}
   `;
@@ -1446,10 +1629,157 @@ function mountQuoteItem(form, item = {}) {
 }
 
 
+function renderSaleItemRow(item = {}) {
+  const productId = item.product_id ?? "";
+  const product = getProductById(productId) || {};
+  const quantity = Number(item.quantity ?? 1);
+  const unitPrice = Number(item.unit_price ?? product.sale_price ?? 0);
+  const totalPrice = Number(item.total_price ?? quantity * unitPrice);
+  const description = item.description ?? product.name ?? "";
+  const sku = item.sku ?? product.sku ?? product.code ?? "";
+  const unit = item.unit ?? product.unit ?? "UN";
+  const ncm = item.ncm ?? product.ncm ?? "";
+  const cfop = item.cfop ?? product.cfop_default ?? "";
+  const origin = item.origin ?? product.origin ?? "";
+  const csosn = item.csosn ?? product.csosn ?? "";
+
+  return `
+    <div class="item-row sale-item-row">
+      <label class="sale-item-product">
+        <span>Produto</span>
+        <select name="product_id">
+          ${renderProductOptions(productId)}
+        </select>
+      </label>
+      <label class="sale-item-quantity">
+        <span>Quantidade</span>
+        <input type="number" name="quantity" min="0.01" step="0.01" value="${quantity}">
+      </label>
+      <label class="sale-item-price">
+        <span>Valor unitário</span>
+        ${renderMoneyInput({ name: "unit_price", value: unitPrice, classes: "money-input-compact" })}
+      </label>
+      <div class="line-total-box sale-item-total">
+        <span>Subtotal</span>
+        <strong class="line-total-value">${formatMoney(totalPrice)}</strong>
+      </div>
+      <button type="button" class="table-action danger line-remove-button sale-item-remove" data-action="remove-sale-item">Remover</button>
+      <div class="sale-item-meta">
+        <span><strong>SKU:</strong> <span data-sale-item-sku>${escapeHtml(sku || "-")}</span></span>
+        <span><strong>Descrição:</strong> <span data-sale-item-description>${escapeHtml(description || "-")}</span></span>
+        <span><strong>Unidade:</strong> <span data-sale-item-unit>${escapeHtml(unit || "UN")}</span></span>
+        <span><strong>NCM:</strong> <span data-sale-item-ncm>${escapeHtml(ncm || "-")}</span></span>
+        <span><strong>CFOP:</strong> <span data-sale-item-cfop>${escapeHtml(cfop || "-")}</span></span>
+        <span><strong>Origem:</strong> <span data-sale-item-origin>${escapeHtml(origin || "-")}</span></span>
+        <span><strong>CSOSN:</strong> <span data-sale-item-csosn>${escapeHtml(csosn || "-")}</span></span>
+      </div>
+    </div>
+  `;
+}
+
+
+function mountSaleItem(form, item = {}) {
+  const container = form.querySelector("[data-sale-items-container]");
+  if (!container) return;
+  container.insertAdjacentHTML("beforeend", renderSaleItemRow(item));
+  syncMoneyInputs(form);
+  updateSaleTotals(form);
+}
+
+
+function syncSaleItemProductData(row) {
+  if (!row) return;
+  const select = row.querySelector('[name="product_id"]');
+  const option = select?.selectedOptions?.[0];
+  if (!option) return;
+  const rowUnitPrice = row.querySelector('[name="unit_price"]');
+
+  const productData = {
+    sku: option.dataset.sku || "-",
+    description: option.dataset.name || "-",
+    unit: option.dataset.unit || "UN",
+    ncm: option.dataset.ncm || "-",
+    cfop: option.dataset.cfop || "-",
+    origin: option.dataset.origin || "-",
+    csosn: option.dataset.csosn || "-",
+  };
+
+  row.querySelector("[data-sale-item-sku]").textContent = productData.sku;
+  row.querySelector("[data-sale-item-description]").textContent = productData.description;
+  row.querySelector("[data-sale-item-unit]").textContent = productData.unit;
+  row.querySelector("[data-sale-item-ncm]").textContent = productData.ncm;
+  row.querySelector("[data-sale-item-cfop]").textContent = productData.cfop;
+  row.querySelector("[data-sale-item-origin]").textContent = productData.origin;
+  row.querySelector("[data-sale-item-csosn]").textContent = productData.csosn;
+
+  if (rowUnitPrice && (!rowUnitPrice.dataset.moneyDigits || Number(rowUnitPrice.dataset.moneyValue || 0) === 0)) {
+    applyMoneyDigits(rowUnitPrice, moneyDigitsFromValue(option.dataset.price || 0));
+  }
+}
+
+
+function getSaleItems(form) {
+  return [...form.querySelectorAll(".sale-item-row")].map((row) => {
+    const option = row.querySelector('[name="product_id"]')?.selectedOptions?.[0];
+    const quantity = Number(row.querySelector('[name="quantity"]').value || 0);
+    const unitPrice = parseMoneyInputValue(row.querySelector('[name="unit_price"]').value || 0);
+    return {
+      product_id: Number(row.querySelector('[name="product_id"]').value || 0),
+      sku: option?.dataset.sku || "",
+      description: option?.dataset.name || "",
+      unit: option?.dataset.unit || "UN",
+      quantity,
+      unit_price: Number(unitPrice.toFixed(2)),
+      total_price: Number((quantity * unitPrice).toFixed(2)),
+      ncm: option?.dataset.ncm || "",
+      cfop: option?.dataset.cfop || "",
+      origin: option?.dataset.origin || "",
+      csosn: option?.dataset.csosn || "",
+    };
+  }).filter((item) => item.product_id || item.quantity > 0 || item.unit_price > 0);
+}
+
+
+function updateSaleTotals(form) {
+  const rows = [...form.querySelectorAll(".sale-item-row")];
+  let itemsCount = 0;
+  let total = 0;
+  rows.forEach((row) => {
+    syncSaleItemProductData(row);
+    const quantity = Number(row.querySelector('[name="quantity"]').value || 0);
+    const unitPrice = parseMoneyInputValue(row.querySelector('[name="unit_price"]').value || 0);
+    const lineTotal = quantity * unitPrice;
+    total += lineTotal;
+    if (row.querySelector('[name="product_id"]').value) {
+      itemsCount += 1;
+    }
+    row.querySelector(".line-total-value").textContent = formatMoney(lineTotal);
+  });
+
+  const totalElement = form.querySelector("[data-sale-total]");
+  const countElement = form.querySelector("[data-sale-item-count]");
+  if (totalElement) totalElement.textContent = formatMoney(total);
+  if (countElement) countElement.textContent = `${itemsCount} item(ns)`;
+}
+
+
 function getSimpleSearchRecords(records, keys, term) {
   if (!term) return records;
   const normalized = term.toLowerCase();
   return records.filter((record) => keys.some((key) => String(record[key] || "").toLowerCase().includes(normalized)));
+}
+
+
+function paginateRecords(records, page = 1, perPage = PRODUCTS_PER_PAGE) {
+  const totalPages = Math.max(Math.ceil(records.length / perPage), 1);
+  const safePage = Math.min(Math.max(Number(page || 1), 1), totalPages);
+  const start = (safePage - 1) * perPage;
+  return {
+    page: safePage,
+    totalPages,
+    items: records.slice(start, start + perPage),
+    totalItems: records.length,
+  };
 }
 
 
@@ -1496,6 +1826,16 @@ function getSalesShiftSummary(sales) {
 }
 
 
+function getActiveProducts() {
+  return state.data.products.filter((product) => product.active !== false);
+}
+
+
+function getProductById(productId) {
+  return state.data.products.find((product) => String(product.id) === String(productId)) || null;
+}
+
+
 function getMetricsGridClass(count) {
   if (count >= 5) return "metrics-grid-5";
   if (count === 4) return "metrics-grid-4";
@@ -1507,7 +1847,7 @@ function renderDashboardPage() {
   const sales = state.data.sales;
   const expenses = state.data.expenses;
   const checks = state.data.checks;
-  const products = state.data.products;
+  const products = getActiveProducts();
 
   const todaySales = filterByPeriod(sales, "sale_date", getPresetRange("today"));
   const yesterdaySales = filterByPeriod(sales, "sale_date", getPresetRange("yesterday"));
@@ -1658,19 +1998,41 @@ function renderDashboardPage() {
 
 function renderProductsPage() {
   const search = state.filters.products.search;
-  const products = getSimpleSearchRecords(state.data.products, ["name", "code", "category", "description"], search);
+  const categoryFilter = state.filters.products.category;
+  const activeFilter = state.filters.products.active_filter || "active";
   const editing = state.editing.products;
-  const totalSaleValue = sumBy(state.data.products, (product) => product.stock_quantity * product.sale_price);
+  const baseProducts = getSimpleSearchRecords(
+    state.data.products,
+    ["name", "sku", "code", "category", "description", "ncm"],
+    search,
+  ).filter((product) => {
+    if (categoryFilter && product.category !== categoryFilter) return false;
+    if (activeFilter === "active") return product.active !== false;
+    if (activeFilter === "inactive") return product.active === false;
+    return true;
+  });
+  const categories = [...new Set(state.data.products.map((product) => product.category).filter(Boolean))].sort();
+  const pagination = paginateRecords(baseProducts, state.filters.products.page, PRODUCTS_PER_PAGE);
+  const products = pagination.items;
+  const activeProducts = getActiveProducts();
+  const totalSaleValue = sumBy(activeProducts, (product) => product.stock_quantity * product.sale_price);
 
   return `
     ${renderHero(
       "Cadastro de produtos",
-      "Cadastre, edite e acompanhe o estoque dos materiais da loja com alerta visual para estoque baixo.",
+      "Catálogo técnico da loja com SKU, dados fiscais, filtros, importação de planilha e controle de ativo/inativo.",
+      `
+        <div class="hero-actions hero-actions-wrap">
+          <a class="btn btn-secondary" href="/api/products/export?format=csv" target="_blank" rel="noreferrer">Exportar CSV</a>
+          <a class="btn btn-secondary" href="/api/products/export?format=xlsx" target="_blank" rel="noreferrer">Exportar Excel</a>
+        </div>
+      `,
     )}
 
-    <section class="metrics-grid metrics-grid-3">
-      ${renderMetricCard({ label: "Produtos cadastrados", value: formatNumber(state.data.products.length), helper: "Base completa da loja" })}
-      ${renderMetricCard({ label: "Estoque baixo", value: formatNumber(state.data.products.filter((product) => product.low_stock).length), helper: "Itens abaixo do mínimo", tone: "danger" })}
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Produtos ativos", value: formatNumber(activeProducts.length), helper: "Base operacional" })}
+      ${renderMetricCard({ label: "Inativos", value: formatNumber(state.data.products.filter((product) => product.active === false).length), helper: "Ocultos para venda" })}
+      ${renderMetricCard({ label: "Estoque baixo", value: formatNumber(activeProducts.filter((product) => product.low_stock).length), helper: "Itens abaixo do mínimo", tone: "danger" })}
       ${renderMetricCard({ label: "Valor de venda em estoque", value: formatMoney(totalSaleValue), helper: "Estimativa pelo preço de venda", tone: "brand" })}
     </section>
 
@@ -1679,15 +2041,15 @@ function renderProductsPage() {
         <div class="section-header">
           <div>
             <h3>${editing ? "Editar produto" : "Novo produto"}</h3>
-            <p>${editing ? "Atualize as informações do item selecionado." : "Preencha os dados para cadastrar um novo produto."}</p>
+            <p>${editing ? "Atualize os dados comerciais, fiscais e de estoque do produto." : "Cadastre SKU, preços, estoque e dados fiscais do item."}</p>
           </div>
         </div>
         <form id="products-form" class="form-grid">
           <input type="hidden" name="id" value="${editing?.id ?? ""}">
           ${renderFormFeedback("products")}
-          <label><span>Nome</span><input type="text" name="name" value="${escapeHtml(toFormValue(editing?.name))}" required></label>
-          <label><span>Código</span><input type="text" name="code" value="${escapeHtml(toFormValue(editing?.code))}" required></label>
+          <label><span>SKU</span><input type="text" name="sku" value="${escapeHtml(toFormValue(editing?.sku || editing?.code))}" required></label>
           <label><span>Categoria</span><input type="text" name="category" value="${escapeHtml(toFormValue(editing?.category))}" required></label>
+          <label class="field-span-2"><span>Nome do produto</span><input type="text" name="name" value="${escapeHtml(toFormValue(editing?.name))}" required></label>
           <label>
             <span>Unidade</span>
             <select name="unit" required>
@@ -1696,11 +2058,23 @@ function renderProductsPage() {
               `).join("")}
             </select>
           </label>
+          <label><span>NCM</span><input type="text" name="ncm" value="${escapeHtml(toFormValue(editing?.ncm))}" placeholder="Ex.: 25232910"></label>
+          <label><span>CFOP padrão</span><input type="text" name="cfop_default" value="${escapeHtml(toFormValue(editing?.cfop_default))}" placeholder="Ex.: 5102"></label>
+          <label><span>Origem</span><input type="text" name="origin" value="${escapeHtml(toFormValue(editing?.origin))}" placeholder="0"></label>
+          <label><span>CSOSN</span><input type="text" name="csosn" value="${escapeHtml(toFormValue(editing?.csosn))}" placeholder="102"></label>
           <label><span>Preço de custo</span>${renderMoneyInput({ name: "cost_price", value: editing?.cost_price ?? 0, required: true })}</label>
           <label><span>Preço de venda</span>${renderMoneyInput({ name: "sale_price", value: editing?.sale_price ?? 0, required: true })}</label>
           <label><span>Quantidade em estoque</span><input type="number" name="stock_quantity" min="0" step="0.01" value="${editing?.stock_quantity ?? 0}" required></label>
           <label><span>Estoque mínimo</span><input type="number" name="min_stock" min="0" step="0.01" value="${editing?.min_stock ?? 0}" required></label>
-          <label class="field-span-2"><span>Descrição</span><textarea name="description" rows="4">${escapeHtml(toFormValue(editing?.description))}</textarea></label>
+          <label>
+            <span>Status</span>
+            <select name="active">
+              <option value="true" ${(editing?.active ?? true) ? "selected" : ""}>Ativo</option>
+              <option value="false" ${editing?.active === false ? "selected" : ""}>Inativo</option>
+            </select>
+          </label>
+          <label class="field-span-2"><span>Descrição curta</span><textarea name="description" rows="3">${escapeHtml(toFormValue(editing?.description))}</textarea></label>
+          <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
           <div class="form-actions field-span-2">
             <button type="submit" class="btn btn-primary">${editing ? "Salvar alterações" : "Cadastrar produto"}</button>
             <button type="button" class="btn btn-secondary" data-action="clear-products-form">Limpar formulário</button>
@@ -1712,15 +2086,37 @@ function renderProductsPage() {
         <div class="section-header">
           <div>
             <h3>Lista de produtos</h3>
-            <p>Busque pelo nome, código ou categoria.</p>
+            <p>Busque por nome, SKU, categoria ou NCM e importe planilhas do catálogo.</p>
           </div>
         </div>
         <section class="panel toolbar-panel" data-filter-scope="products">
           <div class="toolbar-row">
             <label class="toolbar-field toolbar-search">
               <span>Busca</span>
-              <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: cimento, MAT-001, ferragem">
+              <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: cimento, MAT-001, ferragem, NCM">
             </label>
+            <label class="toolbar-field">
+              <span>Categoria</span>
+              <select name="category">
+                <option value="">Todas</option>
+                ${categories.map((category) => `<option value="${escapeHtml(category)}" ${categoryFilter === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="toolbar-field">
+              <span>Status</span>
+              <select name="active_filter">
+                <option value="active" ${activeFilter === "active" ? "selected" : ""}>Ativos</option>
+                <option value="inactive" ${activeFilter === "inactive" ? "selected" : ""}>Inativos</option>
+                <option value="all" ${activeFilter === "all" ? "selected" : ""}>Todos</option>
+              </select>
+            </label>
+            <div class="toolbar-field products-import-field">
+              <span>Importar planilha</span>
+              <div class="inline-actions">
+                <input type="file" id="products-import-file" accept=".xlsx,.xlsm,.csv">
+                <button type="button" class="btn btn-secondary" data-action="import-products-sheet">Importar</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1729,9 +2125,10 @@ function renderProductsPage() {
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Código</th>
+                  <th>SKU</th>
                   <th>Produto</th>
                   <th>Categoria</th>
+                  <th>NCM</th>
                   <th>Estoque</th>
                   <th>Mínimo</th>
                   <th>Venda</th>
@@ -1742,24 +2139,460 @@ function renderProductsPage() {
               <tbody>
                 ${products.map((product) => `
                   <tr class="${product.low_stock ? "row-danger" : ""}">
-                    <td>${escapeHtml(product.code)}</td>
+                    <td>${escapeHtml(product.sku || product.code)}</td>
                     <td>
                       <strong>${escapeHtml(product.name)}</strong>
-                      <small>${escapeHtml(product.unit)}</small>
+                      <small>${escapeHtml(`${product.unit} | CFOP ${product.cfop_default || "-"}`)}</small>
                     </td>
                     <td>${escapeHtml(product.category)}</td>
+                    <td>${escapeHtml(product.ncm || "-")}</td>
                     <td>${formatNumber(product.stock_quantity)}</td>
                     <td>${formatNumber(product.min_stock)}</td>
                     <td>${formatMoney(product.sale_price)}</td>
-                    <td>${product.low_stock ? renderBadge("Estoque baixo", "danger") : renderBadge("OK", "success")}</td>
+                    <td>
+                      ${product.active === false
+                        ? renderBadge("Inativo", "neutral")
+                        : (product.low_stock ? renderBadge("Estoque baixo", "danger") : renderBadge("Ativo", "success"))}
+                    </td>
                     <td>${renderTableActions("product", product.id)}</td>
                   </tr>
                 `).join("")}
               </tbody>
             </table>
           </div>
+          <div class="table-pagination">
+            <button type="button" class="btn btn-secondary" data-action="products-prev-page" ${pagination.page <= 1 ? "disabled" : ""}>Anterior</button>
+            <span>Página ${pagination.page} de ${pagination.totalPages} • ${pagination.totalItems} produto(s)</span>
+            <button type="button" class="btn btn-secondary" data-action="products-next-page" ${pagination.page >= pagination.totalPages ? "disabled" : ""}>Próxima</button>
+          </div>
         ` : renderEmptyState("Nenhum produto encontrado", "Tente outro termo de busca ou cadastre um novo produto.")}
       </article>
+    </section>
+  `;
+}
+
+
+function renderStockPage() {
+  const overview = state.data.stock_overview || {};
+  const filter = state.filters.stock;
+  const products = getSimpleSearchRecords(getActiveProducts(), ["name", "sku", "category", "ncm"], filter.search)
+    .filter((product) => {
+      if (filter.stock_filter === "low") return product.low_stock;
+      if (filter.stock_filter === "empty") return product.out_of_stock;
+      return true;
+    });
+
+  return `
+    ${renderHero(
+      "Estoque",
+      "Registre entradas, saídas e ajustes de inventário com histórico completo e alerta visual para saldo baixo.",
+    )}
+
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Produtos ativos", value: formatNumber(overview.total_products || 0), helper: "Base operacional" })}
+      ${renderMetricCard({ label: "Estoque baixo", value: formatNumber(overview.low_stock_products || 0), helper: "Abaixo do mínimo", tone: "danger" })}
+      ${renderMetricCard({ label: "Sem estoque", value: formatNumber(overview.out_of_stock_products || 0), helper: "Itens zerados", tone: (overview.out_of_stock_products || 0) ? "warning" : "success" })}
+      ${renderMetricCard({ label: "Valor estimado", value: formatMoney(overview.estimated_sale_value || 0), helper: "Preço de venda do saldo", tone: "brand" })}
+    </section>
+
+    <section class="page-grid page-grid-2">
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>Movimentar estoque</h3>
+            <p>Use ENTRADA para compra/reposição, SAÍDA para baixa manual e AJUSTE para saldo final contado.</p>
+          </div>
+        </div>
+        <form id="stock-form" class="form-grid">
+          ${renderFormFeedback("stock")}
+          <label><span>Produto</span><select name="product_id" required>${renderProductOptions("")}</select></label>
+          <label>
+            <span>Tipo</span>
+            <select name="movement_type" required>
+              ${(state.data.options.stock_movement_types || []).map((item) => `<option value="${item}">${item}</option>`).join("")}
+            </select>
+          </label>
+          <label><span>Quantidade / saldo final</span><input type="number" name="quantity" min="0.01" step="0.01" value="1" required></label>
+          <label><span>Documento referência</span><input type="text" name="document_reference" placeholder="Ex.: NF compra 123 ou inventário"></label>
+          <label class="field-span-2"><span>Motivo</span><textarea name="reason" rows="3" required></textarea></label>
+          <div class="form-actions field-span-2">
+            <button type="submit" class="btn btn-primary">Registrar movimentação</button>
+          </div>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>Saldo atual por produto</h3>
+            <p>Use a busca para localizar por SKU, nome, categoria ou NCM.</p>
+          </div>
+        </div>
+        <section class="panel toolbar-panel" data-filter-scope="stock">
+          <div class="toolbar-row">
+            <label class="toolbar-field toolbar-search">
+              <span>Busca</span>
+              <input type="search" name="search" value="${escapeHtml(filter.search || "")}" placeholder="Ex.: MAT-001, cimento, 25232910">
+            </label>
+            <label class="toolbar-field">
+              <span>Visão</span>
+              <select name="stock_filter">
+                <option value="" ${!filter.stock_filter ? "selected" : ""}>Todos</option>
+                <option value="low" ${filter.stock_filter === "low" ? "selected" : ""}>Somente estoque baixo</option>
+                <option value="empty" ${filter.stock_filter === "empty" ? "selected" : ""}>Somente sem estoque</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        ${products.length ? `
+          <div class="table-wrapper">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Produto</th>
+                  <th>Categoria</th>
+                  <th>Atual</th>
+                  <th>Mínimo</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${products.map((product) => `
+                  <tr class="${product.low_stock ? "row-danger" : ""}">
+                    <td>${escapeHtml(product.sku || product.code)}</td>
+                    <td>
+                      <strong>${escapeHtml(product.name)}</strong>
+                      <small>${escapeHtml(`${product.unit} • NCM ${product.ncm || "-"}`)}</small>
+                    </td>
+                    <td>${escapeHtml(product.category)}</td>
+                    <td>${formatNumber(product.stock_quantity)}</td>
+                    <td>${formatNumber(product.min_stock)}</td>
+                    <td>${product.out_of_stock ? renderBadge("Sem estoque", "warning") : (product.low_stock ? renderBadge("Baixo", "danger") : renderBadge("OK", "success"))}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        ` : renderEmptyState("Nenhum produto encontrado", "Ajuste a busca ou o filtro do saldo atual.")}
+      </article>
+    </section>
+  `;
+}
+
+
+function renderMovementsPage() {
+  const filter = state.filters.movements;
+  const period = getPeriod("movements");
+  let movements = filterByPeriod(state.data.stock_movements, "movement_date", period);
+  movements = getSimpleSearchRecords(movements, ["product_name", "product_sku", "reason", "document_reference"], filter.search);
+  if (filter.movement_type) {
+    movements = movements.filter((item) => item.movement_type === filter.movement_type);
+  }
+
+  const chartData = groupByDay(movements, "movement_date", (item) => Math.abs(Number(item.quantity || 0)), 7);
+
+  return `
+    ${renderHero(
+      "Movimentações de estoque",
+      "Histórico completo das entradas, saídas e ajustes manuais, com documento de referência e saldo antes/depois.",
+    )}
+
+    ${renderPeriodToolbar("movements", {
+      showSearch: true,
+      searchPlaceholder: "Buscar por produto, SKU, motivo ou documento",
+    })}
+
+    <section class="panel toolbar-panel" data-filter-scope="movements">
+      <div class="toolbar-row">
+        <label class="toolbar-field">
+          <span>Tipo</span>
+          <select name="movement_type">
+            <option value="">Todos</option>
+            ${(state.data.options.stock_movement_types || []).map((item) => `<option value="${item}" ${filter.movement_type === item ? "selected" : ""}>${item}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Movimentações", value: formatNumber(movements.length), helper: period.label })}
+      ${renderMetricCard({ label: "Entradas", value: formatNumber(movements.filter((item) => item.movement_type === "ENTRADA").length), helper: "Reposições e estornos", tone: "success" })}
+      ${renderMetricCard({ label: "Saídas", value: formatNumber(movements.filter((item) => item.movement_type === "SAIDA").length), helper: "Baixas e vendas", tone: "warning" })}
+      ${renderMetricCard({ label: "Ajustes", value: formatNumber(movements.filter((item) => item.movement_type === "AJUSTE").length), helper: "Inventário", tone: "brand" })}
+    </section>
+
+    <section class="dashboard-grid">
+      ${renderBarChart({ title: "Quantidade movimentada por dia", subtitle: "Últimos 7 dias do filtro", data: chartData, format: "count" })}
+    </section>
+
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <h3>Histórico de movimentações</h3>
+          <p>${period.label}</p>
+        </div>
+      </div>
+      ${movements.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Produto</th>
+                <th>Tipo</th>
+                <th>Quantidade</th>
+                <th>Antes</th>
+                <th>Depois</th>
+                <th>Documento</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${movements.map((movement) => `
+                <tr>
+                  <td>${formatDate(movement.movement_date)}</td>
+                  <td>
+                    <strong>${escapeHtml(movement.product_name)}</strong>
+                    <small>${escapeHtml(movement.product_sku)}</small>
+                  </td>
+                  <td>${renderBadge(movement.movement_type, statusTone(movement.movement_type))}</td>
+                  <td>${formatNumber(movement.quantity)}</td>
+                  <td>${formatNumber(movement.balance_before)}</td>
+                  <td>${formatNumber(movement.balance_after)}</td>
+                  <td>${escapeHtml(movement.document_reference || "-")}</td>
+                  <td>${escapeHtml(movement.reason || "-")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Sem movimentações no período", "Cadastre entradas, saídas ou ajustes para montar o histórico.")}
+    </section>
+  `;
+}
+
+
+function renderNfeValidationResult() {
+  const validation = state.nfe.validation;
+  if (!validation) {
+    return renderEmptyState("Nenhuma validação executada", "Selecione uma venda e clique em validar para revisar dados fiscais e estoque.");
+  }
+
+  return `
+    <div class="nfe-validation-stack">
+      ${validation.issues?.length ? `
+        <div class="form-feedback form-feedback-error">
+          ${validation.issues.map((issue) => `<div>${escapeHtml(issue)}</div>`).join("")}
+        </div>
+      ` : `
+        <div class="form-feedback form-feedback-success">Validação fiscal concluída com sucesso. A venda está pronta para emissão.</div>
+      `}
+      <div class="validation-list">
+        ${validation.checks.map((check) => `
+          <div class="validation-row ${check.ok ? "ok" : "error"}">
+            <strong>${escapeHtml(check.label)}</strong>
+            <span>${check.ok ? "OK" : "Pendente"}</span>
+            <small>${escapeHtml(check.message || "")}</small>
+          </div>
+        `).join("")}
+      </div>
+      <div class="validation-list">
+        ${validation.items.map((item) => `
+          <div class="validation-row ${item.ok ? "ok" : "error"}">
+            <strong>${escapeHtml(item.sku || "-")} • ${escapeHtml(item.description || "-")}</strong>
+            <span>${item.ok ? "Item pronto" : "Ajustar cadastro"}</span>
+            <small>${item.ok ? "NCM, CFOP, origem, CSOSN e estoque OK." : `Pendências: ${escapeHtml(item.missing_fields.join(", "))}`}</small>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+
+function renderNfePage() {
+  const settings = state.data.fiscal_settings || {};
+  const issued = state.data.nfe_issued || [];
+  const filteredIssued = getSimpleSearchRecords(
+    issued,
+    ["customer_name", "access_key", "number_nfe", "status_nfe", "payment_method", "source_type"],
+    state.filters.nfe.search,
+  );
+  const authorizedCount = issued.filter((item) => item.status_nfe === "AUTORIZADA").length;
+  const manualCount = issued.filter((item) => item.source_type === "manual").length;
+  const recentIssued = issued.slice(0, 3);
+
+  return `
+    ${renderHero(
+      "NF-e",
+      "Mantenha os dados fiscais da empresa em dia e abra a nova página exclusiva para montar e emitir a NF-e com mais conforto.",
+      `
+        <div class="hero-actions-wrap">
+          <button type="button" class="btn btn-primary" data-action="open-new-nfe-page">Cadastrar NF-e</button>
+        </div>
+      `,
+    )}
+
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "NF-e emitidas", value: formatNumber(issued.length), helper: "Histórico geral" })}
+      ${renderMetricCard({ label: "Autorizadas", value: formatNumber(authorizedCount), helper: "Status autorizado", tone: "success" })}
+      ${renderMetricCard({ label: "NF-e manuais", value: formatNumber(manualCount), helper: "Fluxo independente de vendas", tone: "brand" })}
+      ${renderMetricCard({ label: "Próximo número", value: formatNumber(settings.next_nfe_number || 1), helper: settings.environment === "production" ? "Produção" : "Homologação", tone: "brand" })}
+    </section>
+
+    <section class="page-grid page-grid-2">
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>Configurações fiscais da empresa</h3>
+            <p>Esses dados são usados no emitente da NF-e e no DANFE.</p>
+          </div>
+        </div>
+        <form id="fiscal-settings-form" class="form-grid">
+          ${renderFormFeedback("fiscal")}
+          <label class="field-span-2"><span>Razão social</span><input type="text" name="company_name" value="${escapeHtml(toFormValue(settings.company_name))}"></label>
+          <label><span>Nome fantasia</span><input type="text" name="trade_name" value="${escapeHtml(toFormValue(settings.trade_name))}"></label>
+          <label><span>CNPJ</span><input type="text" name="cnpj" value="${escapeHtml(toFormValue(settings.cnpj))}" placeholder="00.000.000/0000-00"></label>
+          <label><span>Inscrição estadual</span><input type="text" name="state_registration" value="${escapeHtml(toFormValue(settings.state_registration))}"></label>
+          <label><span>Regime tributário</span><input type="text" name="tax_regime" value="${escapeHtml(toFormValue(settings.tax_regime))}" placeholder="Simples Nacional"></label>
+          <label class="field-span-2"><span>Endereço</span><input type="text" name="street" value="${escapeHtml(toFormValue(settings.street))}"></label>
+          <label><span>Número</span><input type="text" name="number" value="${escapeHtml(toFormValue(settings.number))}"></label>
+          <label><span>Complemento</span><input type="text" name="complement" value="${escapeHtml(toFormValue(settings.complement))}"></label>
+          <label><span>Bairro</span><input type="text" name="district" value="${escapeHtml(toFormValue(settings.district))}"></label>
+          <label><span>Cidade</span><input type="text" name="city" value="${escapeHtml(toFormValue(settings.city))}"></label>
+          <label><span>UF</span><input type="text" name="state" value="${escapeHtml(toFormValue(settings.state))}"></label>
+          <label><span>CEP</span><input type="text" name="zip_code" value="${escapeHtml(toFormValue(settings.zip_code))}"></label>
+          <label><span>Telefone</span><input type="text" name="phone" value="${escapeHtml(toFormValue(settings.phone))}"></label>
+          <label><span>E-mail</span><input type="email" name="email" value="${escapeHtml(toFormValue(settings.email))}"></label>
+          <label><span>Série padrão</span><input type="number" min="1" name="default_series" value="${escapeHtml(toFormValue(settings.default_series || 1))}"></label>
+          <label><span>Próximo número</span><input type="number" min="1" name="next_nfe_number" value="${escapeHtml(toFormValue(settings.next_nfe_number || 1))}"></label>
+          <label>
+            <span>Ambiente</span>
+            <select name="environment">
+              ${(state.data.options.fiscal_environments || []).map((item) => `<option value="${item}" ${settings.environment === item ? "selected" : ""}>${item === "production" ? "Produção" : "Homologação"}</option>`).join("")}
+            </select>
+          </label>
+          <label>
+            <span>Provider</span>
+            <select name="provider_name">
+              ${(state.data.options.fiscal_provider_options || []).map((item) => `<option value="${item}" ${settings.provider_name === item ? "selected" : ""}>${item}</option>`).join("")}
+            </select>
+          </label>
+          <label><span>Token/API</span><input type="text" name="api_token" value="${escapeHtml(toFormValue(settings.api_token))}"></label>
+          <label><span>URL API</span><input type="text" name="api_url" value="${escapeHtml(toFormValue(settings.api_url))}"></label>
+          <label><span>Certificado A1</span><input type="text" name="certificate_path" value="${escapeHtml(toFormValue(settings.certificate_path))}"></label>
+          <label><span>Senha certificado</span><input type="password" name="certificate_password" value="${escapeHtml(toFormValue(settings.certificate_password))}"></label>
+          <label><span>CSC</span><input type="text" name="csc" value="${escapeHtml(toFormValue(settings.csc))}"></label>
+          <label>
+            <span>Estoque negativo</span>
+            <select name="allow_negative_stock">
+              <option value="false" ${settings.allow_negative_stock ? "" : "selected"}>Bloqueado</option>
+              <option value="true" ${settings.allow_negative_stock ? "selected" : ""}>Liberado</option>
+            </select>
+          </label>
+          <div class="form-actions field-span-2">
+            <button type="submit" class="btn btn-primary">Salvar configurações</button>
+          </div>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>Novo fluxo de emissão</h3>
+            <p>A emissão agora acontece em uma página própria, separada da aba de vendas, para deixar o trabalho mais rápido e organizado.</p>
+          </div>
+        </div>
+        <div class="nfe-flow-card">
+          <div class="nfe-flow-step">
+            <strong>1. Cadastre a NF-e em página separada</strong>
+            <p>Use a nova rota dedicada para informar cliente, escolher produtos, ajustar valores e emitir sem depender da aba Vendas.</p>
+          </div>
+          <div class="nfe-flow-step">
+            <strong>2. Gere os documentos fiscais</strong>
+            <p>Ao emitir, o sistema salva o XML mock autorizado e o DANFE em PDF para download imediato.</p>
+          </div>
+          <div class="nfe-flow-step">
+            <strong>3. Consulte o histórico aqui</strong>
+            <p>Depois da emissão, a NF-e volta para esta aba com número, status, cliente e links de XML/PDF.</p>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary btn-block" data-action="open-new-nfe-page">Abrir página de NF-e</button>
+          </div>
+        </div>
+
+        ${recentIssued.length ? `
+          <div class="stat-list">
+            ${recentIssued.map((record) => `
+              <div class="stat-row">
+                <div>
+                  <strong>NF-e #${escapeHtml(String(record.number_nfe))}</strong>
+                  <small>${escapeHtml(record.customer_name || "Cliente não informado")} • ${escapeHtml(record.payment_method || "-")}</small>
+                </div>
+                <div class="stat-row-right">
+                  <span>${formatMoney(record.total_amount)}</span>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        ` : renderEmptyState("Nenhuma NF-e emitida", "Assim que você emitir a primeira NF-e, ela aparecerá aqui.")}
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="section-header">
+        <div>
+          <h3>NF-e emitidas</h3>
+          <p>XML autorizado e DANFE em PDF disponíveis para download.</p>
+        </div>
+      </div>
+      <section class="panel toolbar-panel" data-filter-scope="nfe">
+        <div class="toolbar-row">
+          <label class="toolbar-field toolbar-search">
+            <span>Busca</span>
+            <input type="search" name="search" value="${escapeHtml(state.filters.nfe.search || "")}" placeholder="Número, cliente, chave, pagamento ou origem">
+          </label>
+        </div>
+      </section>
+      ${filteredIssued.length ? `
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>Série</th>
+                <th>Origem</th>
+                <th>Cliente</th>
+                <th>Status</th>
+                <th>Data</th>
+                <th>Total</th>
+                <th>Arquivos</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filteredIssued.map((record) => `
+                <tr>
+                  <td>${escapeHtml(String(record.number_nfe))}</td>
+                  <td>${escapeHtml(String(record.series_nfe))}</td>
+                  <td>${renderBadge(record.source_type === "manual" ? "Manual" : "Venda", record.source_type === "manual" ? "brand" : "neutral")}</td>
+                  <td>${escapeHtml(record.customer_name || "-")}</td>
+                  <td>${renderBadge(record.status_nfe, statusTone(record.status_nfe))}</td>
+                  <td>${escapeHtml(record.authorization_date ? record.authorization_date.slice(0, 10) : "-")}</td>
+                  <td>${formatMoney(record.total_amount)}</td>
+                  <td>
+                    <div class="table-actions">
+                      <button type="button" class="table-action" data-action="download-nfe-xml" data-id="${record.id}">XML</button>
+                      <button type="button" class="table-action" data-action="download-nfe-pdf" data-id="${record.id}">PDF</button>
+                    </div>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : renderEmptyState("Nenhuma NF-e encontrada", "Ajuste a busca ou emita uma nova NF-e pela página dedicada.")}
     </section>
   `;
 }
@@ -1860,8 +2693,9 @@ function renderSalesPage() {
   const filter = state.filters.sales;
   const period = getPeriod("sales");
   const periodSales = filterByPeriod(state.data.sales, "sale_date", period);
-  const sales = getSimpleSearchRecords(periodSales, ["customer_name", "payment_method", "notes", "period", "sale_time"], filter.search);
+  const sales = getSimpleSearchRecords(periodSales, ["payment_method", "notes", "period", "sale_time"], filter.search);
   const editing = state.editing.sales;
+  const currentDate = editing?.sale_date || localTodayIso();
   const currentTime = editing?.sale_time || currentTimeValue();
   const currentPeriod = inferSalePeriod(currentTime);
   const shiftSummary = getSalesShiftSummary(sales);
@@ -1869,16 +2703,17 @@ function renderSalesPage() {
     ? state.data.options.sales_payment_methods
     : state.data.options.payment_methods;
   const selectedPaymentMethod = editing?.payment_method || salesPaymentMethods[0] || state.data.options.payment_methods[0] || "";
+  const draftAmount = editing?.total_amount || editing?.amount || 0;
 
   return `
     ${renderHero(
-      "Lançamento rápido de vendas",
-      "Registre vendas do balcão em poucos segundos, com horário automático e separação entre manhã e tarde.",
+      "Vendas rápidas",
+      "Tela de caixa rápido para registrar vendas em poucos toques, sem itens e sem burocracia.",
     )}
 
     ${renderPeriodToolbar("sales", {
       showSearch: true,
-      searchPlaceholder: "Buscar por pagamento, período, horário ou referência",
+      searchPlaceholder: "Buscar por pagamento, horário, período ou observação",
     })}
 
     <section class="metrics-grid metrics-grid-4">
@@ -1893,15 +2728,15 @@ function renderSalesPage() {
         <div class="section-header">
           <div>
             <h3>${editing ? "Editar venda" : "Nova venda"}</h3>
-            <p>${editing ? "Atualize o valor, o pagamento e o horário da venda." : "Lançamento rápido para balcão, sem cadastro de itens nesta etapa."}</p>
+            <p>${editing ? "Ajuste o valor, a forma de pagamento, a data e o horário da venda selecionada." : "Informe valor, pagamento, data e hora para registrar a venda rapidamente."}</p>
           </div>
         </div>
-        <form id="sales-form" class="form-grid">
+        <form id="sales-form" class="form-grid quick-sale-form">
           <input type="hidden" name="id" value="${editing?.id ?? ""}">
           ${renderFormFeedback("sales")}
-          <label>
+          <label class="field-span-2 quick-sale-amount">
             <span>Valor da venda</span>
-            ${renderMoneyInput({ name: "amount", value: editing?.amount ?? editing?.total_amount ?? 0, required: true })}
+            ${renderMoneyInput({ name: "amount", value: draftAmount, required: true, classes: "money-input-large" })}
           </label>
           <label>
             <span>Meio de pagamento</span>
@@ -1909,49 +2744,36 @@ function renderSalesPage() {
               ${renderPaymentOptions(selectedPaymentMethod, salesPaymentMethods)}
             </select>
           </label>
-          <label>
-            <span>Data da venda</span>
-            <input type="date" name="sale_date" value="${editing?.sale_date || todayIso()}" required>
-          </label>
-          <label>
-            <span>Horário da venda</span>
-            <input type="time" name="sale_time" value="${currentTime}" required>
-          </label>
-          <label>
-            <span>Período</span>
-            <input type="text" value="${currentPeriod}" data-sale-period-preview readonly>
-          </label>
-          <div class="field-span-2 item-list-card">
-            <div class="section-header compact">
-              <div>
-                <h3>Resumo automático</h3>
-                <p>Data registrada automaticamente no momento do salvamento.</p>
-              </div>
+          <div class="field-span-2 quick-sale-meta">
+            <label>
+              <span>Data da venda</span>
+              <input type="date" name="sale_date" value="${currentDate}" required>
+            </label>
+            <label>
+              <span>Hora da venda</span>
+              <input type="time" name="sale_time" value="${currentTime}" step="60" required>
+            </label>
+            <div class="quick-sale-period-lockup">
+              <span>Período calculado</span>
+              <strong data-sale-period-summary>${escapeHtml(currentPeriod)}</strong>
+              <small>Calculado automaticamente pela hora informada.</small>
             </div>
-            <div class="stat-list">
-              <div class="stat-row">
-                <div>
-                  <strong>Data da venda</strong>
-                  <small>Preenchida com hoje por padrão, mas pode ser ajustada manualmente.</small>
-                </div>
-                <div class="stat-row-right">
-                  <span data-sale-date-summary>${escapeHtml(formatDate(editing?.sale_date || todayIso()))}</span>
-                </div>
-              </div>
-              <div class="stat-row">
-                <div>
-                  <strong>Período calculado</strong>
-                  <small>Manhã até 12:00, tarde após 12:00.</small>
-                </div>
-                <div class="stat-row-right">
-                  <span data-sale-period-summary>${escapeHtml(currentPeriod)}</span>
-                </div>
-              </div>
+          </div>
+          <div class="field-span-2 quick-sale-summary">
+            <div class="quick-summary-card">
+              <span>Data e horário da venda</span>
+              <strong><span data-sale-date-summary>${escapeHtml(formatDate(currentDate))}</span> às <span data-sale-time-summary>${escapeHtml(currentTime)}</span></strong>
+              <small data-sale-date-caption>Os campos já vêm preenchidos, mas você pode editar manualmente antes de salvar.</small>
+            </div>
+            <div class="quick-summary-card emphasis">
+              <span>Total desta venda</span>
+              <strong data-sale-quick-total>${formatMoney(draftAmount)}</strong>
+              <small>O histórico continua disponível logo abaixo.</small>
             </div>
           </div>
 
           <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar venda" : "Salvar venda"}</button>
+            <button type="submit" class="btn btn-primary">${editing ? "Salvar venda" : "Registrar venda"}</button>
             <button type="button" class="btn btn-secondary" data-action="clear-sales-form">Limpar formulário</button>
           </div>
         </form>
@@ -2868,9 +3690,10 @@ function buildReport() {
         { label: "Qtd. tarde", value: formatNumber(shiftSummary.countAfternoon), helper: "Vendas após 12:00" },
       ],
       chart: groupByDay(rows, "sale_date", (item) => item.total_amount, 7),
-      tableHeaders: ["Data", "Hora", "Período", "Pagamento", "Total"],
+      tableHeaders: ["Data", "Cliente", "Hora", "Período", "Pagamento", "Total"],
       tableRows: rows.map((item) => [
         formatDate(item.sale_date),
+        item.customer_name || "Consumidor final",
         item.sale_time || "-",
         resolveSalePeriod(item),
         item.payment_method,
@@ -2878,6 +3701,7 @@ function buildReport() {
       ]),
       csvColumns: [
         { label: "Data", value: (item) => item.sale_date },
+        { label: "Cliente", value: (item) => item.customer_name || "Consumidor final" },
         { label: "Hora", value: (item) => item.sale_time || "" },
         { label: "Periodo", value: (item) => resolveSalePeriod(item) },
         { label: "Pagamento", value: (item) => item.payment_method },
@@ -2934,7 +3758,7 @@ function buildReport() {
     };
   }
 
-  const rows = [...state.data.products];
+  const rows = [...getActiveProducts()];
   return {
     title: "Relatório de estoque",
     subtitle: "Posição atual do estoque",
@@ -2943,11 +3767,11 @@ function buildReport() {
       { label: "Estoque baixo", value: formatNumber(countBy(rows, (item) => item.low_stock)), helper: "Abaixo do mínimo" },
       { label: "Valor de venda", value: formatMoney(sumBy(rows, (item) => item.stock_quantity * item.sale_price)), helper: "Estimativa" },
     ],
-    chart: rows.slice(0, 7).map((item) => ({ label: item.code, value: item.stock_quantity })),
-    tableHeaders: ["Código", "Produto", "Categoria", "Estoque"],
-    tableRows: rows.map((item) => [item.code, item.name, item.category, formatNumber(item.stock_quantity)]),
+    chart: rows.slice(0, 7).map((item) => ({ label: item.sku || item.code, value: item.stock_quantity })),
+    tableHeaders: ["SKU", "Produto", "Categoria", "Estoque"],
+    tableRows: rows.map((item) => [item.sku || item.code, item.name, item.category, formatNumber(item.stock_quantity)]),
     csvColumns: [
-      { label: "Codigo", value: (item) => item.code },
+      { label: "SKU", value: (item) => item.sku || item.code },
       { label: "Produto", value: (item) => item.name },
       { label: "Categoria", value: (item) => item.category },
       { label: "Estoque", value: (item) => item.stock_quantity },
@@ -3032,11 +3856,13 @@ async function handlePageSubmit(event) {
 
   const handlers = {
     "products-form": () => submitSimpleForm(form, "products"),
+    "stock-form": () => submitStockForm(form),
     "customers-form": () => submitSimpleForm(form, "customers"),
     "sales-form": () => submitSalesForm(form),
     "quotes-form": () => submitQuotesForm(form),
     "expenses-form": () => submitSimpleForm(form, "expenses"),
     "checks-form": () => submitSimpleForm(form, "checks"),
+    "fiscal-settings-form": () => submitFiscalSettingsForm(form),
   };
 
   const handler = handlers[formId];
@@ -3108,9 +3934,24 @@ function handlePageClick(event) {
     "clear-quotes-form": () => clearEditing("quotes"),
     "clear-expenses-form": () => clearEditing("expenses"),
     "clear-checks-form": () => clearEditing("checks"),
+    "products-prev-page": () => {
+      state.filters.products.page = Math.max((state.filters.products.page || 1) - 1, 1);
+      renderCurrentPage();
+    },
+    "products-next-page": () => {
+      state.filters.products.page = (state.filters.products.page || 1) + 1;
+      renderCurrentPage();
+    },
+    "import-products-sheet": () => {
+      void importProductsSheet();
+    },
     "add-quotes-item": () => {
       const form = document.getElementById("quotes-form");
       mountQuoteItem(form);
+    },
+    "add-sale-item": () => {
+      const form = document.getElementById("sales-form");
+      mountSaleItem(form);
     },
     "remove-quote-item": () => {
       const row = button.closest(".item-row");
@@ -3121,6 +3962,17 @@ function handlePageClick(event) {
           mountQuoteItem(form);
         }
         updateQuoteTotals(form);
+      }
+    },
+    "remove-sale-item": () => {
+      const row = button.closest(".sale-item-row");
+      const form = button.closest("form");
+      if (row && form) {
+        row.remove();
+        if (!form.querySelector(".sale-item-row")) {
+          mountSaleItem(form);
+        }
+        updateSaleTotals(form);
       }
     },
     "edit-product": () => editEntity("products", id),
@@ -3137,6 +3989,21 @@ function handlePageClick(event) {
     "delete-check": () => deleteEntity("checks", id, "cheque"),
     "print-quote": () => openQuoteOutput(id, "print"),
     "pdf-quote": () => openQuoteOutput(id, "pdf"),
+    "open-new-nfe-page": () => {
+      window.location.assign("/nfe/nova");
+    },
+    "validate-nfe-sale": () => {
+      void validateSelectedSaleForNfe();
+    },
+    "emit-nfe": () => {
+      void emitSelectedSaleNfe();
+    },
+    "download-nfe-xml": () => {
+      window.open(`/api/nfe/${id}/xml`, "_blank", "noopener");
+    },
+    "download-nfe-pdf": () => {
+      window.open(`/api/nfe/${id}/pdf`, "_blank", "noopener");
+    },
     "open-filter-date-picker": () => {
       const toolbar = button.closest("[data-filter-scope]");
       const filterName = button.dataset.filterName;
@@ -3185,11 +4052,43 @@ function handlePageChange(event) {
     const scope = toolbar.dataset.filterScope;
     if (scope && target.name) {
       state.filters[scope][target.name] = target.value;
+      if (scope === "products" && ["category", "active_filter"].includes(target.name)) {
+        state.filters.products.page = 1;
+      }
+      if (scope === "nfe" && target.name === "sale_id") {
+        state.nfe.selectedSaleId = target.value;
+        state.nfe.validation = null;
+      }
       renderCurrentPage();
       return;
     }
   }
 
+  const saleRow = target.closest(".sale-item-row");
+  if (saleRow && target.getAttribute("name") === "product_id") {
+    syncSaleItemProductData(saleRow);
+    updateSaleTotals(target.closest("form"));
+  }
+
+  const form = target.closest("form");
+  if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_time") {
+    const periodLabel = inferSalePeriod(target.value || currentTimeValue());
+    const summary = form.querySelector("[data-sale-period-summary]");
+    if (summary) {
+      summary.textContent = periodLabel;
+    }
+    const timeSummary = form.querySelector("[data-sale-time-summary]");
+    if (timeSummary) {
+      timeSummary.textContent = target.value || currentTimeValue();
+    }
+  }
+
+  if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_date") {
+    const summary = form.querySelector("[data-sale-date-summary]");
+    if (summary) {
+      summary.textContent = formatDate(target.value || localTodayIso());
+    }
+  }
 }
 
 
@@ -3211,6 +4110,9 @@ function handlePageInput(event) {
   if (toolbar && target.name === "search") {
     const scope = toolbar.dataset.filterScope;
     state.filters[scope][target.name] = target.value;
+    if (scope === "products") {
+      state.filters.products.page = 1;
+    }
     state.focusField = { scope, name: target.name };
     clearTimeout(searchTimers.get(scope));
     searchTimers.set(scope, setTimeout(() => renderCurrentPage(), 160));
@@ -3225,22 +4127,40 @@ function handlePageInput(event) {
     updateQuoteTotals(form);
   }
 
+  if (
+    form?.getAttribute("id") === "sales-form"
+    && ["quantity", "unit_price"].includes(target.getAttribute("name") || "")
+  ) {
+    updateSaleTotals(form);
+  }
+
+  if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "amount") {
+    const preview = form.querySelector("[data-sale-quick-total]");
+    if (preview) {
+      preview.textContent = formatMoney(parseMoneyInputValue(target.value));
+    }
+  }
+
   if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_time") {
     const periodLabel = inferSalePeriod(target.value || currentTimeValue());
-    const preview = form.querySelector("[data-sale-period-preview]");
-    if (preview) {
-      preview.value = periodLabel;
-    }
     const summary = form.querySelector("[data-sale-period-summary]");
     if (summary) {
       summary.textContent = periodLabel;
+    }
+    const timeSummary = form.querySelector("[data-sale-time-summary]");
+    if (timeSummary) {
+      timeSummary.textContent = target.value || currentTimeValue();
     }
   }
 
   if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_date") {
     const summary = form.querySelector("[data-sale-date-summary]");
     if (summary) {
-      summary.textContent = formatDate(target.value || todayIso());
+      summary.textContent = formatDate(target.value || localTodayIso());
+    }
+    const caption = form.querySelector("[data-sale-date-caption]");
+    if (caption) {
+      caption.textContent = "Os campos já vêm preenchidos, mas você pode editar manualmente antes de salvar.";
     }
   }
 }
@@ -3315,23 +4235,59 @@ async function submitSimpleForm(form, scope) {
 }
 
 
+async function submitStockForm(form) {
+  const payload = normalizePayload(Object.fromEntries(new FormData(form).entries()));
+
+  try {
+    if (!payload.product_id) {
+      throw new Error("Selecione o produto da movimentação.");
+    }
+    if (!payload.movement_type) {
+      throw new Error("Selecione o tipo da movimentação.");
+    }
+    if (!payload.quantity || !isValidNumber(payload.quantity, { min: 0.01, allowZero: false })) {
+      throw new Error("Informe uma quantidade válida para a movimentação.");
+    }
+    if (!payload.reason) {
+      throw new Error("Descreva o motivo da movimentação.");
+    }
+  } catch (error) {
+    updateFormFeedback("stock", form, error.message, "error");
+    showToast(error.message, "error");
+    return;
+  }
+
+  setFormBusy(form, true);
+  try {
+    await api.post("/api/stock/movements", payload);
+    setFormFeedback("stock", "Movimentação registrada com sucesso.", "success");
+    showToast("Movimentação registrada com sucesso.");
+    form.reset();
+    await loadData();
+  } catch (error) {
+    updateFormFeedback("stock", form, error.message, "error");
+    showToast(error.message, "error");
+  } finally {
+    setFormBusy(form, false);
+  }
+}
+
+
 async function submitSalesForm(form) {
   const payload = normalizeMoneyPayload(
     form,
     normalizePayload(Object.fromEntries(new FormData(form).entries())),
   );
+  payload.sale_date = payload.sale_date || localTodayIso();
+  payload.sale_time = payload.sale_time || currentTimeValue();
   const id = payload.id;
   delete payload.id;
-  payload.sale_date = payload.sale_date || state.editing.sales?.sale_date || todayIso();
-  payload.sale_time = payload.sale_time || currentTimeValue();
-  payload.amount = payload.amount || payload.total_amount;
   const allowedPaymentMethods = new Set([
     ...(state.data.options.sales_payment_methods || []),
-    ...(state.data.options.payment_methods || []),
   ]);
 
   try {
-    if (!payload.amount || !isValidNumber(payload.amount, { min: 0.01, allowZero: false })) {
+    if (!isValidNumber(payload.amount, { min: 0.01, allowZero: false })) {
       throw new Error("Informe um valor válido para a venda.");
     }
     if (!payload.payment_method) {
@@ -3344,10 +4300,7 @@ async function submitSalesForm(form) {
       throw new Error("Informe a data da venda.");
     }
     if (!payload.sale_time) {
-      throw new Error("Informe um horário válido para a venda.");
-    }
-    if (!/^\d{2}:\d{2}$/.test(payload.sale_time)) {
-      throw new Error("O horário da venda deve estar no formato HH:MM.");
+      throw new Error("Informe o horário da venda.");
     }
   } catch (error) {
     updateFormFeedback("sales", form, error.message, "error");
@@ -3370,6 +4323,25 @@ async function submitSalesForm(form) {
     await loadData();
   } catch (error) {
     updateFormFeedback("sales", form, error.message, "error");
+    showToast(error.message, "error");
+  } finally {
+    setFormBusy(form, false);
+  }
+}
+
+
+async function submitFiscalSettingsForm(form) {
+  const payload = normalizePayload(Object.fromEntries(new FormData(form).entries()));
+
+  setFormBusy(form, true);
+  try {
+    const response = await api.put("/api/fiscal-settings", payload);
+    state.data.fiscal_settings = response.item;
+    setFormFeedback("fiscal", "Configurações fiscais salvas com sucesso.", "success");
+    showToast("Configurações fiscais salvas com sucesso.");
+    await loadData();
+  } catch (error) {
+    updateFormFeedback("fiscal", form, error.message, "error");
     showToast(error.message, "error");
   } finally {
     setFormBusy(form, false);
@@ -3438,6 +4410,71 @@ async function submitQuotesForm(form) {
     showToast(error.message, "error");
   } finally {
     setFormBusy(form, false);
+  }
+}
+
+
+async function importProductsSheet() {
+  const fileInput = document.getElementById("products-import-file");
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast("Selecione uma planilha Excel/CSV antes de importar.", "error");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  try {
+    const response = await api.upload("/api/products/import", formData);
+    const report = response.report || {};
+    showToast(`Importação concluída: ${report.imported || 0} importado(s), ${report.updated || 0} atualizado(s), ${report.ignored || 0} ignorado(s).`);
+    if (report.errors?.length) {
+      showToast(`A importação terminou com ${report.errors.length} aviso(s).`, "info");
+    }
+    await loadData();
+    if (fileInput) {
+      fileInput.value = "";
+    }
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+
+async function validateSelectedSaleForNfe() {
+  const saleId = state.filters.nfe.sale_id || state.nfe.selectedSaleId;
+  if (!saleId) {
+    showToast("Selecione uma venda para validar a NF-e.", "error");
+    return;
+  }
+
+  try {
+    const response = await api.get(`/api/nfe/validate/${saleId}`);
+    state.nfe.selectedSaleId = String(saleId);
+    state.nfe.validation = response.result;
+    renderCurrentPage();
+    showToast(response.result.can_emit ? "Validação fiscal concluída com sucesso." : "Validação fiscal encontrou pendências.", response.result.can_emit ? "success" : "error");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+
+async function emitSelectedSaleNfe() {
+  const saleId = state.filters.nfe.sale_id || state.nfe.selectedSaleId;
+  if (!saleId) {
+    showToast("Selecione uma venda para emitir a NF-e.", "error");
+    return;
+  }
+
+  try {
+    await api.post("/api/nfe/emit", { sale_id: saleId });
+    showToast("NF-e emitida com sucesso.");
+    state.nfe.validation = null;
+    await loadData();
+  } catch (error) {
+    showToast(error.message, "error");
   }
 }
 

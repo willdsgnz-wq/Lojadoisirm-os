@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable
 
-from flask import Flask, Response, abort, jsonify, make_response, request, send_from_directory
+from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
 
 from backend import services
 from backend.auth import SESSION_COOKIE, create_session_token, verify_session_token
@@ -190,9 +191,103 @@ def api_bootstrap() -> Response:
     return _json_response({"user": user, **services.get_bootstrap_data()})
 
 
+@app.post("/api/products/import")
+def api_products_import() -> Response:
+    _require_user()
+    uploaded_file = request.files.get("file")
+    if not uploaded_file or not uploaded_file.filename:
+        raise services.ServiceError("Selecione uma planilha Excel ou CSV para importar.")
+
+    report = services.import_products_from_spreadsheet(uploaded_file.filename, uploaded_file.read())
+    return _json_response({"report": report, "message": "Importação de produtos concluída."})
+
+
+@app.get("/api/products/export")
+def api_products_export() -> Response:
+    _require_user()
+    export_format = request.args.get("format", "csv").strip().lower() or "csv"
+    dataset = services.export_products_dataset(export_format)
+    return send_file(
+        BytesIO(dataset["content"]),
+        mimetype=dataset["content_type"],
+        as_attachment=True,
+        download_name=dataset["filename"],
+        max_age=0,
+    )
+
+
+@app.route("/api/stock/movements", methods=["GET", "POST"])
+def api_stock_movements() -> Response:
+    user = _require_user()
+    if request.method == "GET":
+        return _json_response({"items": services.list_stock_movements()})
+
+    payload = request.get_json(silent=True) or {}
+    payload["_user_id"] = user["id"]
+    item = services.create_stock_movement(payload)
+    return _json_response({"item": item, "message": "Movimentação de estoque registrada com sucesso."}, 201)
+
+
+@app.get("/api/stock/overview")
+def api_stock_overview() -> Response:
+    _require_user()
+    return _json_response({"overview": services.get_stock_overview()})
+
+
+@app.route("/api/fiscal-settings", methods=["GET", "PUT"])
+def api_fiscal_settings() -> Response:
+    _require_user()
+    if request.method == "GET":
+        return _json_response({"item": services.get_fiscal_settings()})
+
+    payload = request.get_json(silent=True) or {}
+    item = services.update_fiscal_settings(payload)
+    return _json_response({"item": item, "message": "Configurações fiscais atualizadas com sucesso."})
+
+
+@app.get("/api/nfe")
+def api_nfe_list() -> Response:
+    _require_user()
+    return _json_response({"items": services.list_nfe_issued()})
+
+
+@app.get("/api/nfe/validate/<int:sale_id>")
+def api_nfe_validate(sale_id: int) -> Response:
+    _require_user()
+    return _json_response({"result": services.validate_sale_for_nfe(sale_id)})
+
+
+@app.post("/api/nfe/emit")
+def api_nfe_emit() -> Response:
+    _require_user()
+    payload = request.get_json(silent=True) or {}
+    item = services.emit_nfe(payload)
+    return _json_response({"item": item, "message": "NF-e emitida com sucesso."}, 201)
+
+
+@app.get("/api/nfe/<int:nfe_id>/<string:file_type>")
+def api_nfe_download(nfe_id: int, file_type: str) -> Response:
+    _require_user()
+    file_info = services.get_nfe_file_info(nfe_id, file_type)
+    return send_file(
+        file_info["path"],
+        as_attachment=True,
+        download_name=file_info["filename"],
+        max_age=0,
+    )
+
+
+@app.get("/nfe/nova")
+def nfe_new_page() -> Response:
+    if not _current_user():
+        return _serve_frontend("")
+    file_path = FRONTEND_DIR / "nfe-nova.html"
+    return _set_static_headers(make_response(send_from_directory(FRONTEND_DIR, "nfe-nova.html")), file_path)
+
+
 @app.route("/api/<entity>", methods=["GET", "POST"])
 def api_collection(entity: str) -> Response:
-    _require_user()
+    user = _require_user()
     handlers = ENTITY_HANDLERS.get(entity)
     if not handlers:
         raise services.ServiceError("Rota não encontrada.", 404)
@@ -203,13 +298,14 @@ def api_collection(entity: str) -> Response:
         return _json_response({"items": list_handler()})
 
     payload = request.get_json(silent=True) or {}
+    payload["_user_id"] = user["id"]
     item = create_handler(payload)
     return _json_response({"item": item, "message": "Registro criado com sucesso."}, 201)
 
 
 @app.route("/api/<entity>/<int:item_id>", methods=["PUT", "DELETE"])
 def api_item(entity: str, item_id: int) -> Response:
-    _require_user()
+    user = _require_user()
     handlers = ENTITY_HANDLERS.get(entity)
     if not handlers:
         raise services.ServiceError("Rota não encontrada.", 404)
@@ -218,6 +314,7 @@ def api_item(entity: str, item_id: int) -> Response:
 
     if request.method == "PUT":
         payload = request.get_json(silent=True) or {}
+        payload["_user_id"] = user["id"]
         item = update_handler(item_id, payload)
         return _json_response({"item": item, "message": "Registro atualizado com sucesso."})
 

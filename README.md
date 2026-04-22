@@ -32,9 +32,37 @@ Agora, o fluxo foi ajustado assim:
 - `Python 3`
 - `Flask`
 - `psycopg`
+- `openpyxl`
+- `reportlab`
 - `Postgres / Supabase`
 - `HTML + CSS + JavaScript`
 - `Vercel`
+
+## Módulos ERP já incluídos
+
+- `Produtos`
+  - SKU, categoria, nome, unidade, preços, estoque, NCM, CFOP, origem, CSOSN e ativo/inativo
+  - importação de planilha Excel/CSV
+  - exportação em CSV e Excel
+- `Estoque`
+  - entrada manual
+  - saída manual
+  - ajuste de inventário
+  - histórico de movimentações
+- `Vendas com itens`
+  - cliente, itens reais, forma de pagamento, horário e baixa automática de estoque
+- `NF-e`
+  - validação fiscal por venda
+  - provider fiscal desacoplado
+  - provider `mock` pronto para homologação local
+  - geração de XML e DANFE em PDF
+  - download por nota emitida
+- `Configurações fiscais`
+  - dados do emitente
+  - série padrão
+  - ambiente
+  - provider
+  - token/URL/certificado preparados para integração futura
 
 ## Estrutura principal
 
@@ -142,6 +170,11 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+Observação:
+
+- `openpyxl` é usado na importação/exportação de produtos
+- `reportlab` é usado para gerar o DANFE em PDF
+
 ### 4. Crie a estrutura do banco no Supabase
 
 ```bat
@@ -165,6 +198,67 @@ Depois abra:
 ```text
 http://127.0.0.1:8000
 ```
+
+## Fluxo rápido de uso do mini ERP
+
+### 1. Produtos
+
+1. Acesse `Produtos`
+2. Cadastre manualmente ou use `Importar planilha`
+3. Revise SKU, NCM, CFOP, origem e CSOSN
+
+### 2. Estoque
+
+1. Acesse `Estoque`
+2. Lance `ENTRADA`, `SAIDA` ou `AJUSTE`
+3. Consulte o histórico em `Movimentações`
+
+### 3. Vendas
+
+1. Acesse `Vendas`
+2. Escolha o cliente
+3. Adicione os itens reais do estoque
+4. Salve a venda
+
+Ao salvar:
+
+- o total é calculado automaticamente
+- o estoque é baixado automaticamente
+- os itens ficam prontos para validação fiscal
+
+### 4. NF-e
+
+1. Acesse `NF-e`
+2. Preencha as configurações fiscais da empresa
+3. Selecione uma venda com itens
+4. Clique em `Validar dados`
+5. Corrija pendências, se houver
+6. Clique em `Emitir NF-e`
+
+Arquivos gerados:
+
+- XML: `storage/nfe/xml/ANO/MES/`
+- PDF/DANFE: `storage/nfe/pdf/ANO/MES/`
+
+## Provider fiscal real no futuro
+
+A arquitetura já está preparada para plugar um provider real depois.
+
+Arquivos principais:
+
+- [backend/fiscal.py](C:/Users/User/Documents/Codex/2026-04-19-quero-que-voc-crie-do-zero/loja-materiais/backend/fiscal.py)
+- [backend/services.py](C:/Users/User/Documents/Codex/2026-04-19-quero-que-voc-crie-do-zero/loja-materiais/backend/services.py)
+
+Fluxo atual:
+
+- `MockFiscalProvider` gera XML autorizado de homologação e DANFE em PDF
+
+Para integrar um provider real depois:
+
+1. criar uma classe nova herdando `FiscalProvider`
+2. implementar `emit_nfe(...)`
+3. mapear autenticação e retorno da API fiscal
+4. trocar o provider salvo em `Configurações fiscais`
 
 ## Usuario de teste
 

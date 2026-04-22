@@ -1,13 +1,11 @@
-const headers = {
-  "Content-Type": "application/json",
-};
-
 async function request(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
+  const baseHeaders = isFormData ? {} : { "Content-Type": "application/json" };
   const response = await fetch(path, {
     credentials: "same-origin",
     ...options,
     headers: {
-      ...headers,
+      ...baseHeaders,
       ...(options.headers || {}),
     },
   });
@@ -20,11 +18,35 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  login(payload) {
-    return request("/api/login", {
+  get(path) {
+    return request(path, {
+      method: "GET",
+    });
+  },
+
+  post(path, payload) {
+    return request(path, {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+
+  put(path, payload) {
+    return request(path, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  upload(path, formData) {
+    return request(path, {
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  login(payload) {
+    return this.post("/api/login", payload);
   },
 
   logout() {
@@ -34,29 +56,19 @@ export const api = {
   },
 
   me() {
-    return request("/api/auth/me", {
-      method: "GET",
-    });
+    return this.get("/api/auth/me");
   },
 
   bootstrap() {
-    return request("/api/bootstrap", {
-      method: "GET",
-    });
+    return this.get("/api/bootstrap");
   },
 
   create(entity, payload) {
-    return request(`/api/${entity}`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    return this.post(`/api/${entity}`, payload);
   },
 
   update(entity, id, payload) {
-    return request(`/api/${entity}/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(payload),
-    });
+    return this.put(`/api/${entity}/${id}`, payload);
   },
 
   remove(entity, id) {
