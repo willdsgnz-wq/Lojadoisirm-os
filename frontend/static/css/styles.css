@@ -560,10 +560,12 @@ textarea {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 24px 20px 22px;
+  gap: 22px;
+  padding: 28px 24px 26px;
   background:
-    linear-gradient(180deg, rgba(8, 23, 49, 0.98), rgba(15, 32, 79, 0.98) 42%, rgba(26, 57, 119, 0.96) 100%);
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.1), transparent 22%),
+    radial-gradient(circle at bottom left, rgba(59, 130, 246, 0.1), transparent 24%),
+    linear-gradient(180deg, #081a46 0%, #0b2259 40%, #0d255f 100%);
   color: var(--sidebar-text);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   position: sticky;
@@ -576,7 +578,7 @@ textarea {
   overflow-x: hidden;
   overscroll-behavior-y: contain;
   scrollbar-gutter: stable;
-  box-shadow: 18px 0 44px rgba(4, 12, 33, 0.22);
+  box-shadow: 24px 0 54px rgba(4, 12, 33, 0.24);
   transition: padding 0.28s ease, transform 0.24s ease, box-shadow 0.24s ease;
 }
 
@@ -585,8 +587,8 @@ textarea {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at top right, rgba(255, 106, 0, 0.18), transparent 26%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.04), transparent 38%);
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.05), transparent 24%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 34%);
   pointer-events: none;
 }
 
@@ -599,22 +601,49 @@ textarea {
 .brand-mini {
   display: flex;
   align-items: center;
-  gap: 14px;
 }
 
 .sidebar-top {
   justify-content: flex-start;
   min-height: auto;
-  padding: 4px 6px 18px;
-  margin-bottom: 2px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 6px 4px 18px;
+  margin-bottom: 10px;
+}
+
+.brand-mini {
+  align-items: flex-start;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.sidebar-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 82px;
+  height: 82px;
+  flex-shrink: 0;
+}
+
+.sidebar-brand-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.sidebar-brand-mark svg path {
+  fill: none;
+  stroke-width: 3.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .brand-mini strong {
   display: block;
-  font-size: 0.98rem;
-  line-height: 1.24;
-  letter-spacing: 0.08em;
+  font-size: 0.95rem;
+  line-height: 1.08;
+  letter-spacing: 0.04em;
   color: #ffffff;
   text-transform: uppercase;
 }
@@ -625,19 +654,12 @@ textarea {
   font-size: 0.9rem;
 }
 
-.brand-mini {
-  align-items: flex-start;
-  flex-direction: row;
-  flex: 1 1 auto;
-  min-width: 0;
-  width: 100%;
-}
-
 .brand-mini-copy {
   display: grid;
-  gap: 0;
+  gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
+  padding-top: 6px;
   transition: opacity 0.22s ease, transform 0.22s ease, max-width 0.22s ease;
 }
 
@@ -651,6 +673,14 @@ textarea {
   white-space: normal;
 }
 
+.brand-mini-copy span {
+  color: #f97316;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
 .sidebar-brand-image {
   width: min(100%, 244px);
   border-radius: 18px;
@@ -661,119 +691,98 @@ textarea {
 
 .sidebar-nav {
   display: grid;
-  gap: 18px;
+  gap: 28px;
   width: 100%;
 }
 
 .sidebar-group {
   display: grid;
-  gap: 8px;
+  gap: 14px;
 }
 
 .sidebar-group + .sidebar-group {
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 4px;
 }
 
 .sidebar-group-title {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-  color: rgba(219, 234, 254, 0.66);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  gap: 12px;
+  padding: 0 4px;
+  color: rgba(219, 234, 254, 0.62);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .sidebar-group-title::before {
-  content: "";
-  width: 16px;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--sidebar-accent), rgba(255, 106, 0, 0.18));
+  display: none;
+}
+
+.sidebar-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: rgba(219, 234, 254, 0.62);
+  flex-shrink: 0;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(248, 250, 252, 0.88);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(248, 250, 252, 0.92);
   text-align: left;
-  min-height: 58px;
-  padding: 12px 16px 12px 18px;
-  border-radius: 18px;
-  font-size: 0.98rem;
+  min-height: 68px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
   width: 100%;
   position: relative;
   overflow: hidden;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: background 0.22s ease, border-color 0.22s ease, color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: background 0.24s ease, border-color 0.24s ease, color 0.24s ease, transform 0.24s ease, box-shadow 0.24s ease;
 }
 
 .nav-link::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 11px;
-  bottom: 11px;
-  width: 4px;
-  border-radius: 0 999px 999px 0;
-  background: transparent;
-  opacity: 0;
-  transform: scaleY(0.62);
-  transition: opacity 0.22s ease, transform 0.22s ease, background 0.22s ease;
+  display: none;
 }
 
 .nav-link:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.095);
+  border-color: rgba(255, 255, 255, 0.1);
   color: #ffffff;
-  transform: translateX(2px);
-  box-shadow: 0 14px 26px rgba(4, 12, 33, 0.22);
-}
-
-.nav-link:hover::before {
-  background: rgba(255, 106, 0, 0.56);
-  opacity: 1;
-  transform: scaleY(1);
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(3, 10, 28, 0.24);
 }
 
 .nav-link.active {
-  background: linear-gradient(135deg, var(--sidebar-accent), #f97316);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(135deg, #ff6a00, #ff7a1a);
+  border-color: rgba(255, 255, 255, 0.14);
   color: #ffffff;
-  box-shadow: 0 18px 32px rgba(255, 106, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
-.nav-link.active::before {
-  background: var(--sidebar-accent-strong);
-  opacity: 1;
-  transform: scaleY(1);
+  box-shadow: 0 20px 36px rgba(255, 106, 0, 0.34), 0 0 28px rgba(255, 106, 0, 0.18);
 }
 
 .nav-link.active:hover {
-  transform: none;
+  transform: translateY(-1px);
 }
 
 .nav-link-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  background: rgba(219, 234, 254, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #dbeafe;
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.82);
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: background 0.22s ease, color 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
+  transition: color 0.22s ease, transform 0.22s ease, opacity 0.22s ease;
 }
 
 .nav-link-label {
@@ -785,26 +794,28 @@ textarea {
 }
 
 .nav-link svg,
-.icon-button svg {
+.icon-button svg,
+.sidebar-group-icon svg {
   width: 20px;
   height: 20px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2.05;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
+.sidebar-group-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
 .nav-link:hover .nav-link-icon {
-  background: rgba(219, 234, 254, 0.16);
-  border-color: rgba(255, 255, 255, 0.12);
   color: #ffffff;
-  transform: scale(1.03);
+  transform: scale(1.04);
 }
 
 .nav-link.active .nav-link-icon {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.18);
   color: #ffffff;
 }
 
@@ -904,7 +915,7 @@ textarea {
 }
 
 .app-shell.sidebar-collapsed .sidebar {
-  padding-inline: 12px;
+  padding-inline: 14px;
 }
 
 .app-shell.sidebar-collapsed .sidebar-top {
@@ -927,16 +938,16 @@ textarea {
 
 .app-shell.sidebar-collapsed .sidebar-nav {
   justify-items: center;
-  gap: 14px;
+  gap: 20px;
 }
 
 .app-shell.sidebar-collapsed .sidebar-group {
   width: 100%;
-  gap: 10px;
+  gap: 12px;
 }
 
 .app-shell.sidebar-collapsed .sidebar-group + .sidebar-group {
-  padding-top: 10px;
+  padding-top: 4px;
 }
 
 .app-shell.sidebar-collapsed .sidebar-group-title {
@@ -949,7 +960,7 @@ textarea {
 .app-shell.sidebar-collapsed .nav-link {
   justify-content: center;
   gap: 0;
-  padding: 10px 0;
+  padding: 18px 0;
 }
 
 .app-shell.sidebar-collapsed .nav-link-label {
@@ -987,9 +998,9 @@ textarea {
   transform: translateY(-50%) translateX(0);
 }
 
-.app-shell.sidebar-collapsed .nav-link .nav-link-icon {
-  width: 46px;
-  height: 46px;
+.app-shell.sidebar-collapsed .sidebar-brand-mark {
+  width: 56px;
+  height: 56px;
 }
 
 .sidebar-backdrop.visible {
