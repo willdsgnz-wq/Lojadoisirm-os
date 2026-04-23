@@ -1,6 +1,44 @@
 const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
 const MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
+function formatLocalIsoDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function normalizeDateValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    return formatLocalIsoDate(value);
+  }
+
+  const rawValue = String(value).trim();
+  if (!rawValue) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) {
+    return rawValue;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}[T\s]/.test(rawValue)) {
+    const normalizedInput = rawValue.includes("T") ? rawValue : rawValue.replace(" ", "T");
+    const parsedDate = new Date(normalizedInput);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return formatLocalIsoDate(parsedDate);
+    }
+    return rawValue.slice(0, 10);
+  }
+
+  const parsedDate = new Date(rawValue);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return formatLocalIsoDate(parsedDate);
+  }
+
+  return "";
+}
+
 export function formatMoney(value = 0) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -14,7 +52,9 @@ export function formatNumber(value = 0) {
 
 export function formatDate(value) {
   if (!value) return "-";
-  const date = new Date(`${value}T00:00:00`);
+  const normalizedValue = normalizeDateValue(value);
+  if (!normalizedValue) return "-";
+  const date = new Date(`${normalizedValue}T00:00:00`);
   return new Intl.DateTimeFormat("pt-BR").format(date);
 }
 
@@ -28,16 +68,17 @@ export function escapeHtml(value = "") {
 }
 
 export function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return formatLocalIsoDate(new Date());
 }
 
 export function parseDate(value) {
-  if (!value) return null;
-  return new Date(`${value}T00:00:00`);
+  const normalizedValue = normalizeDateValue(value);
+  if (!normalizedValue) return null;
+  return new Date(`${normalizedValue}T00:00:00`);
 }
 
 export function toIso(date) {
-  return date.toISOString().slice(0, 10);
+  return formatLocalIsoDate(date);
 }
 
 export function startOfWeek(date) {
@@ -116,9 +157,9 @@ export function getPresetRange(preset, custom = {}) {
 }
 
 export function isBetween(dateValue, range) {
-  const date = parseDate(dateValue);
-  const start = parseDate(range.start);
-  const end = parseDate(range.end);
+  const date = normalizeDateValue(dateValue);
+  const start = normalizeDateValue(range.start);
+  const end = normalizeDateValue(range.end);
   if (!date || !start || !end) return false;
   return date >= start && date <= end;
 }
@@ -142,7 +183,7 @@ export function groupByDay(records, key, valueResolver, days = 7) {
     const current = new Date(today);
     current.setDate(today.getDate() - index);
     const iso = toIso(current);
-    const total = sumBy(records.filter((item) => item[key] === iso), valueResolver);
+    const total = sumBy(records.filter((item) => normalizeDateValue(item[key]) === iso), valueResolver);
     result.push({
       label: WEEKDAY_LABELS[current.getDay()],
       value: total,
@@ -199,7 +240,7 @@ export function groupByMonth(records, key, valueResolver, months = 12) {
 }
 
 export function sortByDateDesc(records, key) {
-  return [...records].sort((first, second) => second[key].localeCompare(first[key]));
+  return [...records].sort((first, second) => normalizeDateValue(second[key]).localeCompare(normalizeDateValue(first[key])));
 }
 
 export function getPaymentTotals(records, paymentKey, amountKey) {

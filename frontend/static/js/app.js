@@ -63,7 +63,11 @@ const PRODUCT_CSOSN_OPTIONS = ["101", "102", "103", "201", "202", "203", "300", 
 
 const monthStart = (() => {
   const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+  const year = String(firstDay.getFullYear());
+  const month = String(firstDay.getMonth() + 1).padStart(2, "0");
+  const day = String(firstDay.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 })();
 
 const state = {
@@ -2753,7 +2757,7 @@ function getFilteredSalesData() {
 
 
 function getSalesHeaderMetrics() {
-  const todaySales = state.data.sales.filter((sale) => sale.sale_date === localTodayIso());
+  const todaySales = filterByPeriod(state.data.sales, "sale_date", getPresetRange("today"));
   const yesterdaySales = filterByPeriod(state.data.sales, "sale_date", getPresetRange("yesterday"));
   const totalToday = sumBy(todaySales, (sale) => sale.total_amount);
   const totalYesterday = sumBy(yesterdaySales, (sale) => sale.total_amount);
