@@ -33,7 +33,7 @@ PAYMENT_METHOD_ALIASES = {
 }
 PRODUCT_UNITS = ["UN", "KG", "M3", "M2", "SC", "RL", "CH", "LT", "CX"]
 QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"]
-QUOTE_STATUSES = ["Pendente", "Aprovado", "Nao aprovado"]
+QUOTE_STATUSES = ["Pendente", "Aprovado", "Cancelado", "Nao aprovado"]
 CHECK_STATUSES = ["Pendente", "Compensado", "Atrasado", "Cancelado"]
 BILL_STATUSES = ["Pendente", "Pago", "Vencendo hoje", "Atrasado"]
 STOCK_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "AJUSTE"]
@@ -714,10 +714,15 @@ def delete_customer(customer_id: int) -> None:
 
 def _prepare_quote_items(raw_items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], float]:
     if not raw_items:
-        raise ServiceError("Adicione pelo menos um item manual ao orçamento.")
+        raise ServiceError("Adicione pelo menos um item ao orçamento.")
 
     items: list[dict[str, Any]] = []
     for index, item in enumerate(raw_items, start=1):
+        product_id = (
+            _parse_int(item.get("product_id"), f"product_id_{index}", min_value=1)
+            if item.get("product_id") not in (None, "")
+            else None
+        )
         item_name = _clean_text(item.get("item_name"))
         if not item_name:
             raise ServiceError(f"Informe o nome do item {index}.")
@@ -727,6 +732,7 @@ def _prepare_quote_items(raw_items: list[dict[str, Any]]) -> tuple[list[dict[str
         total_price = round_money(quantity * unit_price)
         items.append(
             {
+                "product_id": product_id,
                 "item_name": item_name,
                 "unit": unit,
                 "quantity": quantity,
@@ -842,7 +848,7 @@ def create_quote(payload: dict[str, Any]) -> dict[str, Any]:
                 """,
                 (
                     quote_id,
-                    None,
+                    item["product_id"],
                     item["item_name"],
                     item["unit"],
                     item["quantity"],
@@ -907,7 +913,7 @@ def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 """,
                 (
                     quote_id,
-                    None,
+                    item["product_id"],
                     item["item_name"],
                     item["unit"],
                     item["quantity"],

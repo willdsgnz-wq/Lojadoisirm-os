@@ -1548,7 +1548,8 @@ function statusTone(status) {
   if (normalized.includes("ajuste")) return "brand";
   if (normalized.includes("compens")) return "success";
   if (normalized.includes("aprov")) return "success";
-  if (normalized.includes("cancel")) return "neutral";
+  if (normalized.includes("cancel")) return "danger";
+  if (normalized.includes("nao aprov") || normalized.includes("não aprov")) return "danger";
   if (normalized.includes("baixo")) return "danger";
   return "neutral";
 }
@@ -1583,6 +1584,7 @@ function renderQuoteTableActions(id) {
     <div class="table-actions">
       <button type="button" class="table-action" data-action="print-quote" data-id="${id}">Imprimir</button>
       <button type="button" class="table-action" data-action="pdf-quote" data-id="${id}">PDF</button>
+      <button type="button" class="table-action" data-action="duplicate-quote" data-id="${id}">Duplicar</button>
       <button type="button" class="table-action" data-action="edit-quote" data-id="${id}">Editar</button>
       <button type="button" class="table-action danger" data-action="delete-quote" data-id="${id}">Excluir</button>
     </div>
@@ -1672,6 +1674,115 @@ function renderQuoteUnitOptions(selectedValue = "UN") {
 }
 
 
+function normalizeQuoteLookupValue(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+
+function getQuoteProductLookupLabel(product) {
+  const sku = product?.sku || product?.code || "";
+  const name = product?.name || "";
+  return sku ? `${sku} - ${name}` : name;
+}
+
+
+function renderQuoteProductSuggestions() {
+  return [...getActiveProducts()]
+    .sort((first, second) => String(first.name || "").localeCompare(String(second.name || "")))
+    .map((product) => `<option value="${escapeHtml(getQuoteProductLookupLabel(product))}"></option>`)
+    .join("");
+}
+
+
+function resolveQuoteDraftProduct(value) {
+  const normalizedValue = normalizeQuoteLookupValue(value);
+  if (!normalizedValue) return null;
+
+  return getActiveProducts().find((product) => {
+    const sku = normalizeQuoteLookupValue(product.sku || product.code);
+    const name = normalizeQuoteLookupValue(product.name);
+    const label = normalizeQuoteLookupValue(getQuoteProductLookupLabel(product));
+    return normalizedValue === sku || normalizedValue === name || normalizedValue === label;
+  }) || null;
+}
+
+
+function renderQuoteMatchedProduct(product) {
+  if (!product) {
+    return `
+      <div class="quote-product-match quote-product-match-empty" data-quote-product-match="true">
+        <strong>Autocomplete por produto</strong>
+        <small>Digite o nome ou SKU para usar os dados do cadastro automaticamente.</small>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="quote-product-match" data-quote-product-match="true">
+      <strong>${escapeHtml(product.name || "-")}</strong>
+      <small>${escapeHtml(product.sku || product.code || "-")} • ${escapeHtml(product.unit || "UN")} • ${formatMoney(product.sale_price || 0)}</small>
+    </div>
+  `;
+}
+
+
+function syncQuoteDraftProductMatch(form, options = {}) {
+  if (!(form instanceof HTMLFormElement)) return null;
+
+  const {
+    forceName = false,
+    preferCatalogValues = false,
+  } = options;
+
+  const itemNameField = form.querySelector('[name="draft_item_name"]');
+  const unitField = form.querySelector('[name="draft_unit"]');
+  const quantityField = form.querySelector('[name="draft_quantity"]');
+  const unitPriceField = form.querySelector('[name="draft_unit_price"]');
+  const matchContainer = form.querySelector("[data-quote-product-match]");
+
+  if (!(itemNameField instanceof HTMLInputElement)) return null;
+
+  const matchedProduct = resolveQuoteDraftProduct(itemNameField.value);
+
+  if (matchContainer) {
+    matchContainer.outerHTML = renderQuoteMatchedProduct(matchedProduct);
+  }
+
+  if (!matchedProduct) {
+    return null;
+  }
+
+  const normalizedInput = normalizeQuoteLookupValue(itemNameField.value);
+  const matchesLookupLabel = normalizedInput === normalizeQuoteLookupValue(getQuoteProductLookupLabel(matchedProduct));
+  const matchesSku = normalizedInput === normalizeQuoteLookupValue(matchedProduct.sku || matchedProduct.code);
+
+  if (forceName || matchesLookupLabel || matchesSku) {
+    itemNameField.value = matchedProduct.name || itemNameField.value;
+  }
+
+  if (unitField instanceof HTMLSelectElement && (preferCatalogValues || !unitField.value || unitField.value === "UN")) {
+    unitField.value = matchedProduct.unit || "UN";
+  }
+
+  if (isMoneyInput(unitPriceField)) {
+    const currentValue = parseMoneyInputValue(unitPriceField.value || 0);
+    if (preferCatalogValues || currentValue === 0) {
+      applyMoneyDigits(unitPriceField, moneyDigitsFromValue(matchedProduct.sale_price || 0));
+    }
+  }
+
+  if (quantityField instanceof HTMLInputElement && !quantityField.value) {
+    quantityField.value = "1";
+  }
+
+  return matchedProduct;
+}
+
+
 function createQuoteDraftItem(item = {}, options = {}) {
   const { allowZeroQuantity = false } = options;
   const itemName = String(item.item_name ?? item.product_name ?? "").trim();
@@ -1688,6 +1799,7 @@ function createQuoteDraftItem(item = {}, options = {}) {
     : Number((quantity * unitPrice).toFixed(2));
 
   return {
+    product_id: item.product_id ? Number(item.product_id) : null,
     item_name: itemName,
     unit,
     quantity,
@@ -1717,7 +1829,9 @@ function getQuoteComposer() {
 
 function syncQuoteComposerState() {
   const editing = state.editing.quotes;
-  const initializedFor = editing ? `quote:${editing.id}` : "new";
+  const initializedFor = editing
+    ? (editing.__composer_key || `quote:${editing.id}`)
+    : "new";
   if (getQuoteComposer().initializedFor !== initializedFor) {
     state.quoteComposer = createQuoteComposer(editing?.items || [], initializedFor);
   }
@@ -1748,19 +1862,34 @@ function clearQuoteDraft(form = null) {
   if (unitPriceField) {
     applyMoneyDigits(unitPriceField, moneyDigitsFromValue(composer.draft.unit_price));
   }
+  const matchContainer = form.querySelector("[data-quote-product-match]");
+  if (matchContainer) {
+    matchContainer.outerHTML = renderQuoteMatchedProduct(null);
+  }
 }
 
 
 function readQuoteDraftFromForm(form) {
   const composer = getQuoteComposer();
-  const itemName = form.querySelector('[name="draft_item_name"]')?.value || "";
+  const itemNameRaw = form.querySelector('[name="draft_item_name"]')?.value || "";
   const unit = form.querySelector('[name="draft_unit"]')?.value || "UN";
   const quantityValue = Number(form.querySelector('[name="draft_quantity"]')?.value || 0);
   const unitPriceValue = parseMoneyInputValue(form.querySelector('[name="draft_unit_price"]')?.value || 0);
+  const matchedProduct = resolveQuoteDraftProduct(itemNameRaw);
+  const normalizedInput = normalizeQuoteLookupValue(itemNameRaw);
+  const shouldUseProductName = Boolean(
+    matchedProduct
+    && [
+      normalizeQuoteLookupValue(matchedProduct.name),
+      normalizeQuoteLookupValue(matchedProduct.sku || matchedProduct.code),
+      normalizeQuoteLookupValue(getQuoteProductLookupLabel(matchedProduct)),
+    ].includes(normalizedInput)
+  );
 
   composer.draft = createQuoteDraftItem({
-    item_name: itemName,
-    unit,
+    product_id: matchedProduct?.id || null,
+    item_name: shouldUseProductName ? matchedProduct.name : itemNameRaw,
+    unit: unit || matchedProduct?.unit || "UN",
     quantity: quantityValue,
     unit_price: unitPriceValue,
   }, { allowZeroQuantity: true });
@@ -1774,13 +1903,25 @@ function renderQuoteDraftEditor() {
   const draft = composer.draft || createQuoteDraftItem();
   const isEditingItem = Number.isInteger(composer.editingIndex);
   const draftTotal = Number((Number(draft.quantity || 0) * Number(draft.unit_price || 0)).toFixed(2));
+  const matchedProduct = resolveQuoteDraftProduct(draft.item_name);
 
   return `
-    <div class="quote-entry-form-card">
-      <div class="quote-entry-form-grid">
-        <label class="quote-entry-name">
-          <span>Nome do item</span>
-          <input type="text" name="draft_item_name" value="${escapeHtml(toFormValue(draft.item_name))}" placeholder="Ex.: Cimento CP-II 50kg">
+    <div class="quote-entry-form-card quotes-item-entry-card">
+      <div class="quote-entry-form-grid quotes-item-entry-grid">
+        <label class="quote-entry-name quotes-item-autocomplete">
+          <span>Produto / item</span>
+          <input
+            type="text"
+            name="draft_item_name"
+            list="quotes-product-suggestions"
+            value="${escapeHtml(toFormValue(draft.item_name))}"
+            placeholder="Digite nome, SKU ou item avulso"
+            autocomplete="off"
+          >
+          <datalist id="quotes-product-suggestions">
+            ${renderQuoteProductSuggestions()}
+          </datalist>
+          ${renderQuoteMatchedProduct(matchedProduct)}
         </label>
         <label class="quote-entry-unit">
           <span>Unidade</span>
@@ -1801,7 +1942,7 @@ function renderQuoteDraftEditor() {
           <strong data-quote-draft-total>${formatMoney(draftTotal)}</strong>
         </div>
       </div>
-      <div class="quote-entry-actions">
+      <div class="quote-entry-actions quotes-item-entry-actions">
         <button type="button" class="btn btn-primary" data-action="save-quote-item">${isEditingItem ? "Salvar alteração" : "Adicionar item"}</button>
         ${isEditingItem ? '<button type="button" class="btn btn-secondary" data-action="cancel-quote-item-edit">Cancelar edição</button>' : ""}
       </div>
@@ -1812,10 +1953,11 @@ function renderQuoteDraftEditor() {
 
 function renderQuoteItemsList() {
   const composer = getQuoteComposer();
+  const itemsTotal = sumBy(composer.items, (item) => item.total_price);
 
   return composer.items.length ? `
-    <div class="table-wrapper quote-items-table-wrapper">
-      <table class="data-table quote-items-table">
+    <div class="table-wrapper quote-items-table-wrapper quotes-items-table-wrapper">
+      <table class="data-table quote-items-table quotes-items-table">
         <thead>
           <tr>
             <th>Item</th>
@@ -1844,16 +1986,23 @@ function renderQuoteItemsList() {
                 </div>
               </td>
             </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-  ` : `
-    <div class="quote-items-empty">
-      <strong>Nenhum item adicionado ainda</strong>
-      <p>Use o formulário acima para lançar os itens do orçamento e montar a lista rapidamente.</p>
-    </div>
-  `;
+            `).join("")}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4"><strong>Total geral dos itens</strong></td>
+              <td><strong>${formatMoney(itemsTotal)}</strong></td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    ` : `
+      <div class="quote-items-empty quotes-items-empty">
+        <strong>Nenhum item adicionado ainda</strong>
+        <p>Use o formulário acima para lançar os itens do orçamento. Ao pressionar Enter, o item é adicionado rapidamente.</p>
+      </div>
+    `;
 }
 
 
@@ -1937,6 +2086,7 @@ function focusQuoteItemName(form) {
 
 function handleSaveQuoteItem(form) {
   const composer = getQuoteComposer();
+  syncQuoteDraftProductMatch(form, { forceName: true });
   const draft = readQuoteDraftFromForm(form);
 
   try {
@@ -1990,6 +2140,7 @@ function handleEditQuoteItem(form, index) {
   }
 
   clearFormFeedback("quotes", form);
+  syncQuoteDraftProductMatch(form, { preferCatalogValues: false });
   renderQuoteItemsSection(form);
   focusQuoteItemName(form);
 }
@@ -3187,8 +3338,8 @@ function renderQuotesListResults() {
   const quotes = getFilteredQuotes();
 
   return quotes.length ? `
-    <div class="table-wrapper">
-      <table class="data-table">
+    <div class="table-wrapper quotes-list-table-wrapper">
+      <table class="data-table quotes-list-table">
         <thead>
           <tr>
             <th>Data</th>
@@ -3205,10 +3356,13 @@ function renderQuotesListResults() {
             <tr>
               <td>${formatDate(quote.quote_date)}</td>
               <td>${formatDate(quote.validity_date || quote.quote_date)}</td>
-              <td>${escapeHtml(quote.customer_name)}</td>
+              <td>
+                <strong>${escapeHtml(quote.customer_name)}</strong>
+                <small>${escapeHtml(summarizeQuoteItems(quote) || "Sem itens")}</small>
+              </td>
               <td>${renderBadge(quote.status, statusTone(quote.status))}</td>
               <td>${formatMoney(quote.total_amount)}</td>
-              <td><small>${escapeHtml(summarizeQuoteItems(quote) || "Sem itens")}</small></td>
+              <td>${formatNumber(quote.items?.length || 0)} item(ns)</td>
               <td>${renderQuoteTableActions(quote.id)}</td>
             </tr>
           `).join("")}
@@ -4465,6 +4619,20 @@ function summarizeQuoteItems(quote) {
 }
 
 
+function buildDuplicateQuoteDraft(quote) {
+  return {
+    ...quote,
+    __composer_key: `quote-duplicate:${quote.id}:${Date.now()}`,
+    id: "",
+    quote_date: todayIso(),
+    validity_date: quote.validity_date || quote.quote_date || todayIso(),
+    status: "Pendente",
+    notes: quote.notes || "",
+    items: (quote.items || []).map((item) => createQuoteDraftItem(item)),
+  };
+}
+
+
 function buildQuoteDraftSnapshot() {
   const form = document.getElementById("quotes-form");
   if (!form) return null;
@@ -4928,29 +5096,127 @@ function renderQuotesPage() {
   const editing = state.editing.quotes;
   const composer = syncQuoteComposerState();
   const approvedCount = countBy(state.data.quotes, (quote) => quote.status === "Aprovado");
+  const pendingCount = countBy(state.data.quotes, (quote) => quote.status === "Pendente");
+  const canceledCount = countBy(
+    state.data.quotes,
+    (quote) => ["Cancelado", "Nao aprovado"].includes(quote.status),
+  );
   const initialCustomerManualName = editing?.customer_name_manual || "";
   const initialDiscount = Number(editing?.discount_amount || 0);
   const initialSubtotal = sumBy(composer.items, (item) => item.total_price || (Number(item.quantity || 0) * Number(item.unit_price || 0)));
   const initialTotal = Math.max(initialSubtotal - initialDiscount, 0);
+  const primaryActionLabel = editing ? "Salvar orçamento" : "Gerar orçamento";
 
   return `
     ${renderHero(
       "Orçamentos",
-      "Monte orçamentos manuais com itens digitados livremente, cálculo automático e versão pronta para imprimir ou gerar PDF.",
+      "Fluxo de criação rápido para propostas: dados no topo, itens no centro e lista de orçamentos no final da página.",
     )}
 
     <section class="metrics-grid metrics-grid-4">
       ${renderMetricCard({ label: "Total de orçamentos", value: formatNumber(state.data.quotes.length), helper: "Todos os registros" })}
       ${renderMetricCard({ label: "Aprovados", value: formatNumber(approvedCount), helper: "Status aprovado", tone: "success" })}
-      ${renderMetricCard({ label: "Pendentes", value: formatNumber(countBy(state.data.quotes, (quote) => quote.status === "Pendente")), helper: "Aguardando resposta", tone: "warning" })}
-      ${renderMetricCard({ label: "Valor total", value: formatMoney(sumBy(state.data.quotes, (quote) => quote.total_amount)), helper: "Somando todos os orçamentos" })}
+      ${renderMetricCard({ label: "Pendentes", value: formatNumber(pendingCount), helper: "Aguardando resposta", tone: "warning" })}
+      ${renderMetricCard({ label: "Cancelados", value: formatNumber(canceledCount), helper: "Propostas encerradas", tone: "danger" })}
     </section>
 
-    <section class="panel toolbar-panel" data-filter-scope="quotes">
+    <article class="panel quotes-builder-panel">
+      <div class="section-header quotes-builder-header">
+        <div>
+          <h3>${editing ? "Editar orçamento" : "Novo orçamento"}</h3>
+          <p>${editing ? "Revise os dados, ajuste os itens e salve a nova versão da proposta." : "Preencha os dados principais e lance os itens em sequência para gerar o orçamento com mais rapidez."}</p>
+        </div>
+        <div class="quotes-builder-badges">
+          <span class="quote-builder-badge">${formatNumber(composer.items.length)} item(ns)</span>
+          <span class="quote-builder-badge">${formatMoney(initialTotal)} no total</span>
+        </div>
+      </div>
+
+      <form id="quotes-form" class="quotes-builder-form">
+        <div class="quotes-form-shell">
+          <input type="hidden" name="id" value="${editing?.id ?? ""}">
+          ${renderFormFeedback("quotes")}
+
+          <section class="quotes-form-section">
+            <div class="section-header compact quotes-form-section-head">
+              <div>
+                <h3>Dados do orçamento</h3>
+                <p>Cliente, datas e status organizados para um preenchimento rápido e claro.</p>
+              </div>
+            </div>
+            <div class="quotes-header-grid">
+              <label>
+                <span>Data</span>
+                <input type="date" name="quote_date" value="${editing?.quote_date || todayIso()}" required>
+              </label>
+              <label>
+                <span>Validade</span>
+                <input type="date" name="validity_date" value="${editing?.validity_date || editing?.quote_date || todayIso()}" required>
+              </label>
+              <label>
+                <span>Status</span>
+                <select name="status" required>${renderQuoteStatusOptions(editing?.status || "Pendente")}</select>
+              </label>
+              <label class="quotes-field-span-2">
+                <span>Nome do cliente</span>
+                <input type="text" name="customer_name_manual" value="${escapeHtml(toFormValue(initialCustomerManualName))}" placeholder="Digite manualmente, se preferir">
+              </label>
+              <label class="quotes-field-span-2">
+                <span>Cliente cadastrado</span>
+                <select name="customer_id">${renderCustomerOptions(editing?.customer_id || "")}</select>
+              </label>
+              <label class="quotes-field-span-3">
+                <span>Observações</span>
+                <textarea name="notes" rows="3" placeholder="Informações importantes para apresentar ao cliente.">${escapeHtml(toFormValue(editing?.notes))}</textarea>
+              </label>
+            </div>
+          </section>
+
+          <section class="quotes-form-section quotes-items-section">
+            <div class="section-header compact quotes-form-section-head">
+              <div>
+                <h3>Itens do orçamento</h3>
+                <p>Autocomplete por produto, valor total automático e edição rápida dos itens já lançados.</p>
+              </div>
+            </div>
+            <div class="quotes-items-layout">
+              ${renderQuoteDraftEditor()}
+              <div class="quotes-items-board" data-quote-items-list>
+                ${renderQuoteItemsList()}
+              </div>
+            </div>
+            <div class="quote-totals-grid quotes-summary-grid">
+              <div class="items-total quotes-summary-card">
+                <span>Subtotal</span>
+                <strong data-quote-subtotal>${formatMoney(initialSubtotal)}</strong>
+              </div>
+              <label class="quote-discount-field quotes-summary-card">
+                <span>Desconto</span>
+                ${renderMoneyInput({ name: "discount_amount", value: initialDiscount, classes: "money-input-compact" })}
+              </label>
+              <div class="items-total total-final-box quotes-summary-card quotes-summary-total">
+                <span>Total final</span>
+                <strong data-quote-total>${formatMoney(initialTotal)}</strong>
+                <small data-quote-discount>Desconto: ${formatMoney(initialDiscount)}</small>
+              </div>
+            </div>
+          </section>
+
+          <div class="form-actions quotes-main-actions">
+            <button type="submit" class="btn btn-primary quotes-primary-submit">${primaryActionLabel}</button>
+            <button type="button" class="btn btn-secondary" data-action="print-quote" data-id="${editing?.id ?? ""}">Imprimir orçamento</button>
+            <button type="button" class="btn btn-secondary" data-action="pdf-quote" data-id="${editing?.id ?? ""}">Gerar PDF</button>
+            <button type="button" class="btn btn-secondary" data-action="clear-quotes-form">Limpar formulário</button>
+          </div>
+        </div>
+      </form>
+    </article>
+
+    <section class="panel toolbar-panel quotes-list-toolbar" data-filter-scope="quotes">
       <div class="toolbar-row">
         <label class="toolbar-field toolbar-search">
           <span>Busca</span>
-          <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Buscar por cliente ou observação">
+          <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Buscar por cliente, item ou observação">
         </label>
         <label class="toolbar-field">
           <span>Status</span>
@@ -4964,76 +5230,15 @@ function renderQuotesPage() {
       </div>
     </section>
 
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>${editing ? "Editar orçamento" : "Novo orçamento"}</h3>
-            <p>${editing ? "Atualize a proposta selecionada." : "Monte a proposta com nome manual ou cliente cadastrado, validade e itens manuais."}</p>
-          </div>
+    <article class="panel quotes-list-panel">
+      <div class="section-header">
+        <div>
+          <h3>Lista de orçamentos</h3>
+          <p>Consulte propostas existentes, filtre por status e use duplicação para acelerar novos atendimentos.</p>
         </div>
-        <form id="quotes-form" class="form-grid">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
-          ${renderFormFeedback("quotes")}
-          <label><span>Data</span><input type="date" name="quote_date" value="${editing?.quote_date || todayIso()}" required></label>
-          <label><span>Nome do cliente</span><input type="text" name="customer_name_manual" value="${escapeHtml(toFormValue(initialCustomerManualName))}" placeholder="Digite manualmente, se preferir"></label>
-          <label><span>Cliente cadastrado</span><select name="customer_id">${renderCustomerOptions(editing?.customer_id || "")}</select></label>
-          <label><span>Validade</span><input type="date" name="validity_date" value="${editing?.validity_date || editing?.quote_date || todayIso()}" required></label>
-          <label>
-            <span>Status</span>
-            <select name="status" required>${renderQuoteStatusOptions(editing?.status || "Pendente")}</select>
-          </label>
-          <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
-
-          <div class="field-span-2 item-list-card">
-            <div class="section-header compact">
-              <div>
-                <h3>Lançamento de itens</h3>
-                <p>Adicione um item por vez e acompanhe a lista do orçamento logo abaixo.</p>
-              </div>
-            </div>
-            <div class="quote-entry-layout">
-              ${renderQuoteDraftEditor()}
-              <div data-quote-items-list>
-                ${renderQuoteItemsList()}
-              </div>
-            </div>
-            <div class="quote-totals-grid">
-              <div class="items-total">
-                <span>Subtotal</span>
-                <strong data-quote-subtotal>${formatMoney(initialSubtotal)}</strong>
-              </div>
-              <label class="quote-discount-field">
-                <span>Desconto</span>
-                ${renderMoneyInput({ name: "discount_amount", value: initialDiscount, classes: "money-input-compact" })}
-              </label>
-              <div class="items-total total-final-box">
-                <span>Total final</span>
-                <strong data-quote-total>${formatMoney(initialTotal)}</strong>
-                <small data-quote-discount>Desconto: ${formatMoney(initialDiscount)}</small>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar orçamento" : "Cadastrar orçamento"}</button>
-            <button type="button" class="btn btn-secondary" data-action="print-quote" data-id="${editing?.id ?? ""}">Imprimir orçamento</button>
-            <button type="button" class="btn btn-secondary" data-action="pdf-quote" data-id="${editing?.id ?? ""}">Gerar PDF</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-quotes-form">Limpar formulário</button>
-          </div>
-        </form>
-      </article>
-
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Lista de orçamentos</h3>
-            <p>Busque, edite ou altere o status das propostas.</p>
-          </div>
-        </div>
-        <div data-search-results-scope="quotes">${renderQuotesListResults()}</div>
-      </article>
-    </section>
+      </div>
+      <div data-search-results-scope="quotes">${renderQuotesListResults()}</div>
+    </article>
   `;
 }
 
@@ -5674,8 +5879,15 @@ function handlePageClick(event) {
       },
       "edit-customer": () => editEntity("customers", id),
     "edit-sale": () => editEntity("sales", id),
-    "edit-quote": () => editEntity("quotes", id),
-    "edit-expense": () => editEntity("expenses", id),
+      "edit-quote": () => editEntity("quotes", id),
+      "duplicate-quote": () => {
+        const quote = state.data.quotes.find((item) => String(item.id) === String(id));
+        if (!quote) return;
+        state.editing.quotes = buildDuplicateQuoteDraft(quote);
+        clearFormFeedback("quotes");
+        renderCurrentPage();
+      },
+      "edit-expense": () => editEntity("expenses", id),
     "edit-bill": () => editEntity("bills", id),
     "edit-check": () => editEntity("checks", id),
     "delete-product": () => deleteEntity("products", id, "produto"),
@@ -5793,6 +6005,19 @@ function handlePageChange(event) {
     }
   }
 
+  if (form?.getAttribute("id") === "quotes-form") {
+    const fieldName = target.getAttribute("name") || "";
+    if (fieldName === "draft_item_name") {
+      syncQuoteDraftProductMatch(form, { forceName: true });
+      updateQuoteTotals(form);
+      return;
+    }
+    if (fieldName === "draft_unit") {
+      updateQuoteTotals(form);
+      return;
+    }
+  }
+
   if (form?.getAttribute("id") === "sales-form" && target.getAttribute("name") === "sale_time") {
     const periodLabel = inferSalePeriod(target.value || currentTimeValue());
     const summary = form.querySelector("[data-sale-period-summary]");
@@ -5861,6 +6086,12 @@ function handlePageInput(event) {
       updateProductPricing(form, "sale");
       return;
     }
+  }
+
+  if (form?.getAttribute("id") === "quotes-form" && target.getAttribute("name") === "draft_item_name") {
+    syncQuoteDraftProductMatch(form);
+    updateQuoteTotals(form);
+    return;
   }
 
   if (
@@ -6136,7 +6367,7 @@ async function submitQuotesForm(form) {
       throw new Error("A validade do orçamento não pode ser anterior à data do orçamento.");
     }
     if (!payload.items.length) {
-      throw new Error("Adicione pelo menos um item manual ao orçamento.");
+      throw new Error("Adicione pelo menos um item ao orçamento.");
     }
     payload.items.forEach((item, index) => {
       if (!item.item_name) {
