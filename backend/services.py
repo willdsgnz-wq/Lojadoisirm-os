@@ -488,6 +488,7 @@ def _serialize_customer(row: dict[str, Any]) -> dict[str, Any]:
     item["state_registration"] = _clean_text(item.get("state_registration"))
     item["rg"] = _clean_text(item.get("rg"))
     item["birth_date"] = _clean_text(item.get("birth_date"))
+    item["notes"] = _clean_text(item.get("notes"))
     if item["person_type"] != "PF":
         item["rg"] = ""
         item["birth_date"] = ""

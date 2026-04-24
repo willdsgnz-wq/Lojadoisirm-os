@@ -3241,14 +3241,14 @@ function renderCustomerActionIcon(name) {
 function renderCustomerListActions(customer) {
   return `
     <div class="table-actions customer-table-actions">
-      <button type="button" class="table-action icon-only" data-action="view-customer" data-id="${customer.id}" title="Ver cliente" aria-label="Ver cliente">
-        ${renderCustomerActionIcon("view")}
+      <button type="button" class="table-action" data-action="view-customer" data-id="${customer.id}" title="Ver cliente" aria-label="Ver cliente">
+        ${renderCustomerActionIcon("view")}<span>Ver</span>
       </button>
-      <button type="button" class="table-action icon-only" data-action="edit-customer" data-id="${customer.id}" title="Editar cliente" aria-label="Editar cliente">
-        ${renderCustomerActionIcon("edit")}
+      <button type="button" class="table-action" data-action="edit-customer" data-id="${customer.id}" title="Editar cliente" aria-label="Editar cliente">
+        ${renderCustomerActionIcon("edit")}<span>Editar</span>
       </button>
-      <button type="button" class="table-action icon-only danger" data-action="delete-customer" data-id="${customer.id}" title="Excluir cliente" aria-label="Excluir cliente">
-        ${renderCustomerActionIcon("delete")}
+      <button type="button" class="table-action danger" data-action="delete-customer" data-id="${customer.id}" title="Excluir cliente" aria-label="Excluir cliente">
+        ${renderCustomerActionIcon("delete")}<span>Excluir</span>
       </button>
     </div>
   `;
@@ -4948,6 +4948,8 @@ function renderNfePage() {
 function renderCustomersPage() {
   const search = state.filters.customers.search;
   const editing = defaultCustomerDraft(state.editing.customers);
+  const activeTab = state.customersUi.activeTab || "main";
+  const previewCustomer = getCustomerPreviewRecord();
   const totals = {
     total: state.data.customers.length,
     individuals: state.data.customers.filter((customer) => customer.person_type !== "PJ").length,
@@ -4968,157 +4970,211 @@ function renderCustomersPage() {
       ${renderMetricCard({ label: "Contribuintes", value: formatNumber(totals.contributors), helper: "Com IE obrigat\u00f3ria" })}
     </section>
 
-    <section class="page-grid page-grid-2">
+    <section class="page-grid customers-layout">
       <article class="panel customer-form-panel">
-        <div class="section-header">
-          <div>
-            <h3>${editing.id ? "Editar cliente" : "Novo cliente"}</h3>
-            <p>${editing.id ? "Atualize os dados fiscais do cliente selecionado." : "Cadastre clientes para selecionar diretamente na emiss\u00e3o da NF-e."}</p>
+        <div class="customer-form-shell">
+          <div class="section-header customer-shell-header">
+            <div>
+              <h3>${editing.id ? "Editar cliente" : "Novo cliente"}</h3>
+              <p>${editing.id ? "Atualize o cadastro selecionado com o padrão fiscal exigido pela NF-e." : "Preencha os dados e deixe o cliente pronto para seleção imediata na emissão da nota."}</p>
+            </div>
+            <span class="sales-section-chip">${editing.id ? "Em edição" : "Cadastro"}</span>
           </div>
-        </div>
-        <form id="customers-form" class="form-grid customer-form-grid">
-          <input type="hidden" name="id" value="${editing.id}">
-          ${renderFormFeedback("customers")}
+          <form id="customers-form" class="form-grid customer-form-grid">
+            <input type="hidden" name="id" value="${editing.id}">
+            ${renderFormFeedback("customers")}
 
-          <div class="field-span-2 customer-form-section">
-            <div class="section-header compact">
-              <div>
-                <h4>Tipo de cliente</h4>
-                <p>Escolha a estrutura fiscal correta antes de preencher os dados.</p>
+            <div class="field-span-2 customer-form-topbar">
+              <div class="customer-type-switcher customer-type-switcher-large">
+                ${customerPersonTypeOptions().map((option) => `
+                  <label class="customer-type-option">
+                    <input type="radio" name="person_type" value="${option.value}" ${editing.person_type === option.value ? "checked" : ""}>
+                    <span>${option.label}</span>
+                  </label>
+                `).join("")}
               </div>
             </div>
-            <div class="customer-type-switcher">
-              ${customerPersonTypeOptions().map((option) => `
-                <label class="customer-type-option">
-                  <input type="radio" name="person_type" value="${option.value}" ${editing.person_type === option.value ? "checked" : ""}>
-                  <span>${option.label}</span>
-                </label>
+
+            <div class="field-span-2 customer-form-tabs" role="tablist" aria-label="Abas do cadastro de clientes">
+              ${[
+                { id: "main", label: "Dados principais" },
+                { id: "address", label: "Endereço" },
+                { id: "fiscal", label: "Fiscal" },
+                { id: "notes", label: "Observações" },
+              ].map((tab) => `
+                <button
+                  type="button"
+                  class="customer-tab-button ${activeTab === tab.id ? "is-active" : ""}"
+                  data-action="customer-tab"
+                  data-tab="${tab.id}"
+                  role="tab"
+                  aria-selected="${activeTab === tab.id ? "true" : "false"}"
+                >
+                  ${tab.label}
+                </button>
               `).join("")}
             </div>
-          </div>
 
-          <div class="field-span-2 customer-form-section">
-            <div class="section-header compact">
-              <div>
-                <h4>Dados principais</h4>
-                <p>Esses dados s\u00e3o usados no cadastro e na identifica\u00e7\u00e3o do destinat\u00e1rio da NF-e.</p>
+            <section class="field-span-2 customer-tab-panel ${activeTab === "main" ? "is-active" : ""}">
+              <div class="customer-form-section">
+                <div class="section-header compact">
+                  <div>
+                    <h4>Dados principais</h4>
+                    <p>Identificação do cliente e canais de contato usados no dia a dia.</p>
+                  </div>
+                </div>
+                <div class="customer-form-section-grid customer-section-main-grid">
+                  <label class="field-span-2">
+                    <span data-customer-name-label>${editing.person_type === "PJ" ? "Razão social" : "Nome completo"}</span>
+                    <input type="text" name="name" value="${escapeHtml(toFormValue(editing.name))}" placeholder="${editing.person_type === "PJ" ? "Ex.: Dois Irmãos Comércio Ltda" : "Ex.: João da Silva"}" required>
+                  </label>
+                  <label class="field-span-2 ${editing.person_type === "PJ" ? "" : "hidden"}" data-customer-trade-name>
+                    <span>Nome fantasia</span>
+                    <input type="text" name="trade_name" value="${escapeHtml(toFormValue(editing.trade_name))}" placeholder="Opcional">
+                  </label>
+                  <label class="${editing.person_type === "PF" ? "" : "hidden"}" data-customer-cpf-field>
+                    <span data-customer-document-label>CPF</span>
+                    <input type="text" name="cpf" value="${escapeHtml(toFormValue(editing.cpf))}" inputmode="numeric" placeholder="Somente números">
+                  </label>
+                  <label class="${editing.person_type === "PJ" ? "" : "hidden"}" data-customer-cnpj-field>
+                    <span data-customer-document-label>CNPJ</span>
+                    <input type="text" name="cnpj" value="${escapeHtml(toFormValue(editing.cnpj))}" inputmode="numeric" placeholder="Somente números">
+                  </label>
+                  <label>
+                    <span>Telefone</span>
+                    <input type="text" name="phone" value="${escapeHtml(toFormValue(editing.phone))}" placeholder="Opcional">
+                  </label>
+                  <label>
+                    <span>WhatsApp</span>
+                    <input type="text" name="whatsapp" value="${escapeHtml(toFormValue(editing.whatsapp))}" placeholder="Opcional">
+                  </label>
+                  <label class="field-span-2">
+                    <span>E-mail</span>
+                    <input type="email" name="email" value="${escapeHtml(toFormValue(editing.email))}" placeholder="Opcional">
+                  </label>
+                </div>
               </div>
-            </div>
-            <div class="customer-form-section-grid">
-              <label class="field-span-2">
-                <span data-customer-name-label>${editing.person_type === "PJ" ? "Razão social" : "Nome completo"}</span>
-                <input type="text" name="name" value="${escapeHtml(toFormValue(editing.name))}" placeholder="${editing.person_type === "PJ" ? "Ex.: Dois Irmãos Comércio Ltda" : "Ex.: João da Silva"}" required>
-              </label>
-              <label class="field-span-2 ${editing.person_type === "PJ" ? "" : "hidden"}" data-customer-trade-name>
-                <span>Nome fantasia</span>
-                <input type="text" name="trade_name" value="${escapeHtml(toFormValue(editing.trade_name))}" placeholder="Opcional">
-              </label>
-              <label class="${editing.person_type === "PF" ? "" : "hidden"}" data-customer-cpf-field>
-                <span data-customer-document-label>CPF</span>
-                <input type="text" name="cpf" value="${escapeHtml(toFormValue(editing.cpf))}" inputmode="numeric" placeholder="Somente números">
-              </label>
-              <label class="${editing.person_type === "PJ" ? "" : "hidden"}" data-customer-cnpj-field>
-                <span data-customer-document-label>CNPJ</span>
-                <input type="text" name="cnpj" value="${escapeHtml(toFormValue(editing.cnpj))}" inputmode="numeric" placeholder="Somente números">
-              </label>
-              <label>
-                <span>Telefone</span>
-                <input type="text" name="phone" value="${escapeHtml(toFormValue(editing.phone))}" placeholder="Opcional">
-              </label>
-              <label>
-                <span>E-mail</span>
-                <input type="email" name="email" value="${escapeHtml(toFormValue(editing.email))}" placeholder="Opcional">
-              </label>
-            </div>
-          </div>
+            </section>
 
-          <div class="field-span-2 customer-form-section">
-            <div class="section-header compact">
-              <div>
-                <h4>Endereço fiscal</h4>
-                <p>Ao informar o CEP, o sistema tenta preencher o endereço automaticamente.</p>
+            <section class="field-span-2 customer-tab-panel ${activeTab === "address" ? "is-active" : ""}">
+              <div class="customer-form-section">
+                <div class="section-header compact">
+                  <div>
+                    <h4>Endereço</h4>
+                    <p>Busque pelo CEP e complete o endereço fiscal do cliente.</p>
+                  </div>
+                </div>
+                <div class="customer-form-section-grid customer-section-address-grid">
+                  <label>
+                    <span>CEP</span>
+                    <input type="text" name="zip_code" value="${escapeHtml(formatZipCode(editing.zip_code))}" inputmode="numeric" placeholder="00000-000">
+                  </label>
+                  <label class="field-span-2">
+                    <span>Rua</span>
+                    <input type="text" name="street" value="${escapeHtml(toFormValue(editing.street))}" placeholder="Rua, avenida, estrada" required>
+                  </label>
+                  <label>
+                    <span>Número</span>
+                    <input type="text" name="number" value="${escapeHtml(toFormValue(editing.number))}" placeholder="Ex.: 120" required>
+                  </label>
+                  <label>
+                    <span>Bairro</span>
+                    <input type="text" name="district" value="${escapeHtml(toFormValue(editing.district))}" placeholder="Bairro" required>
+                  </label>
+                  <label class="field-span-2">
+                    <span>Complemento</span>
+                    <input type="text" name="complement" value="${escapeHtml(toFormValue(editing.complement))}" placeholder="Opcional">
+                  </label>
+                  <label>
+                    <span>Cidade</span>
+                    <input type="text" name="city" value="${escapeHtml(toFormValue(editing.city))}" placeholder="Cidade" required>
+                  </label>
+                  <label>
+                    <span>Estado</span>
+                    <input type="text" name="state" value="${escapeHtml(toFormValue(editing.state))}" maxlength="2" placeholder="UF" required>
+                  </label>
+                </div>
               </div>
-            </div>
-            <div class="customer-form-section-grid">
-              <label>
-                <span>CEP</span>
-                <input type="text" name="zip_code" value="${escapeHtml(formatZipCode(editing.zip_code))}" inputmode="numeric" placeholder="00000-000">
-              </label>
-              <label class="field-span-2">
-                <span>Logradouro</span>
-                <input type="text" name="street" value="${escapeHtml(toFormValue(editing.street))}" placeholder="Rua, avenida, estrada" required>
-              </label>
-              <label>
-                <span>Número</span>
-                <input type="text" name="number" value="${escapeHtml(toFormValue(editing.number))}" placeholder="Ex.: 120" required>
-              </label>
-              <label>
-                <span>Complemento</span>
-                <input type="text" name="complement" value="${escapeHtml(toFormValue(editing.complement))}" placeholder="Opcional">
-              </label>
-              <label>
-                <span>Bairro</span>
-                <input type="text" name="district" value="${escapeHtml(toFormValue(editing.district))}" required>
-              </label>
-              <label>
-                <span>Cidade</span>
-                <input type="text" name="city" value="${escapeHtml(toFormValue(editing.city))}" required>
-              </label>
-              <label>
-                <span>UF</span>
-                <input type="text" name="state" value="${escapeHtml(toFormValue(editing.state))}" maxlength="2" placeholder="UF" required>
-              </label>
-              <label>
-                <span>Código IBGE do município</span>
-                <input type="text" name="city_ibge_code" value="${escapeHtml(toFormValue(editing.city_ibge_code))}" inputmode="numeric" placeholder="7 dígitos" required>
-              </label>
-            </div>
-          </div>
+            </section>
 
-          <div class="field-span-2 customer-form-section">
-            <div class="section-header compact">
-              <div>
-                <h4>Inscrição estadual</h4>
-                <p>Preencha o indicador fiscal conforme o cadastro do destinatário.</p>
+            <section class="field-span-2 customer-tab-panel ${activeTab === "fiscal" ? "is-active" : ""}">
+              <div class="customer-form-section">
+                <div class="section-header compact">
+                  <div>
+                    <h4>Fiscal</h4>
+                    <p>Campos fiscais necessários para emissão segura de NF-e.</p>
+                  </div>
+                </div>
+                <div class="customer-form-section-grid customer-section-fiscal-grid">
+                  <label>
+                    <span>Indicador IE</span>
+                    <select name="ie_indicator">
+                      ${customerIeIndicatorOptions().map((option) => `
+                        <option value="${option.value}" ${editing.ie_indicator === option.value ? "selected" : ""}>${option.label}</option>
+                      `).join("")}
+                    </select>
+                  </label>
+                  <label class="${editing.ie_indicator === "Contribuinte" ? "" : "hidden"}" data-customer-ie-field>
+                    <span>Inscrição Estadual</span>
+                    <input type="text" name="state_registration" value="${escapeHtml(toFormValue(editing.state_registration))}" placeholder="Obrigatória para contribuinte">
+                  </label>
+                  <label>
+                    <span>Código IBGE do município</span>
+                    <input type="text" name="city_ibge_code" value="${escapeHtml(toFormValue(editing.city_ibge_code))}" inputmode="numeric" placeholder="7 dígitos" required>
+                  </label>
+                  <label class="${editing.person_type === "PF" ? "" : "hidden"}" data-customer-rg-field>
+                    <span>RG</span>
+                    <input type="text" name="rg" value="${escapeHtml(toFormValue(editing.rg))}" placeholder="Opcional">
+                  </label>
+                  <label class="${editing.person_type === "PF" ? "" : "hidden"}" data-customer-birth-date-field>
+                    <span>Data de nascimento</span>
+                    <input type="date" name="birth_date" value="${escapeHtml(toFormValue(editing.birth_date))}">
+                  </label>
+                </div>
               </div>
-            </div>
-            <div class="customer-form-section-grid">
-              <label>
-                <span>Indicador de IE</span>
-                <select name="ie_indicator">
-                  ${customerIeIndicatorOptions().map((option) => `
-                    <option value="${option.value}" ${editing.ie_indicator === option.value ? "selected" : ""}>${option.label}</option>
-                  `).join("")}
-                </select>
-              </label>
-              <label class="${editing.ie_indicator === "Contribuinte" ? "" : "hidden"}" data-customer-ie-field>
-                <span>Inscrição estadual</span>
-                <input type="text" name="state_registration" value="${escapeHtml(toFormValue(editing.state_registration))}" placeholder="Obrigatória para contribuinte">
-              </label>
-            </div>
-          </div>
+            </section>
 
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing.id ? "Salvar alterações" : "Cadastrar cliente"}</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-customers-form">Limpar formulário</button>
-          </div>
-        </form>
+            <section class="field-span-2 customer-tab-panel ${activeTab === "notes" ? "is-active" : ""}">
+              <div class="customer-form-section">
+                <div class="section-header compact">
+                  <div>
+                    <h4>Observações</h4>
+                    <p>Espaço para anotações internas do cadastro.</p>
+                  </div>
+                </div>
+                <div class="customer-form-section-grid customer-section-notes-grid">
+                  <label class="field-span-2">
+                    <span>Observações</span>
+                    <textarea name="notes" rows="7" placeholder="Informações adicionais sobre o cliente">${escapeHtml(toFormValue(editing.notes))}</textarea>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <div class="form-actions field-span-2 customer-form-actions">
+              <button type="submit" class="btn btn-primary">Salvar cliente</button>
+              <button type="button" class="btn btn-secondary" data-action="clear-customers-form">Limpar formulário</button>
+            </div>
+          </form>
+        </div>
       </article>
 
       <article class="panel customer-list-panel">
-        <div class="section-header">
+        <div class="section-header customer-shell-header">
           <div>
             <h3>Lista de clientes</h3>
-            <p>Busque por nome, CPF/CNPJ, cidade, IE ou código IBGE.</p>
+            <p>Busque, visualize e gerencie os clientes já cadastrados.</p>
           </div>
+          <span class="sales-section-chip">${formatNumber(totals.total)} registros</span>
         </div>
-        <section class="panel toolbar-panel" data-filter-scope="customers">
-          <div class="toolbar-row">
-            <label class="toolbar-field toolbar-search">
-              <span>Busca</span>
-              <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: João, CNPJ, CEP, cidade, IE">
-            </label>
-          </div>
+
+        ${previewCustomer ? renderCustomerPreviewCard(previewCustomer) : ""}
+
+        <section class="customer-list-toolbar" data-filter-scope="customers">
+          <label class="toolbar-field toolbar-search customer-search-field">
+            <span>Buscar</span>
+            <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Digite nome, CPF, CNPJ, IE ou cidade...">
+          </label>
         </section>
         <div data-search-results-scope="customers">${renderCustomersListResults()}</div>
       </article>
@@ -6327,6 +6383,18 @@ function handlePageClick(event) {
     "clear-products-form": () => clearEditing("products"),
     "cancel-products-form": () => clearEditing("products"),
     "clear-customers-form": () => clearEditing("customers"),
+    "customer-tab": () => {
+      state.customersUi.activeTab = button.dataset.tab || "main";
+      renderCurrentPage();
+    },
+    "view-customer": () => {
+      state.customersUi.previewId = id || null;
+      renderCurrentPage();
+    },
+    "close-customer-preview": () => {
+      state.customersUi.previewId = null;
+      renderCurrentPage();
+    },
     "clear-sales-form": () => clearEditing("sales"),
     "clear-quotes-form": () => clearEditing("quotes"),
     "clear-expenses-form": () => clearEditing("expenses"),
@@ -6458,7 +6526,7 @@ function handlePageClick(event) {
         clearFormFeedback("products");
         renderCurrentPage();
       },
-      "edit-customer": () => editEntity("customers", id),
+    "edit-customer": () => editEntity("customers", id),
     "edit-sale": () => editEntity("sales", id),
       "edit-quote": () => editEntity("quotes", id),
       "duplicate-quote": () => {
@@ -6747,6 +6815,10 @@ function handlePageInput(event) {
 
 function clearEditing(scope) {
   state.editing[scope] = null;
+  if (scope === "customers") {
+    state.customersUi.activeTab = "main";
+    state.customersUi.previewId = null;
+  }
   if (scope === "quotes") {
     resetQuoteComposer();
   }
@@ -6757,6 +6829,10 @@ function clearEditing(scope) {
 
 function editEntity(scope, id) {
   state.editing[scope] = state.data[scope].find((item) => String(item.id) === String(id)) || null;
+  if (scope === "customers") {
+    state.customersUi.activeTab = "main";
+    state.customersUi.previewId = id || null;
+  }
   if (scope === "quotes") {
     resetQuoteComposer();
   }
