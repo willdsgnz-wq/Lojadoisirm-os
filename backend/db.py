@@ -197,6 +197,10 @@ def run_runtime_migrations() -> None:
         ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE
         """,
         """
+        ALTER TABLE IF EXISTS expenses
+        ADD COLUMN IF NOT EXISTS linked_bill_id BIGINT
+        """,
+        """
         ALTER TABLE IF EXISTS sale_items
         ADD COLUMN IF NOT EXISTS sku TEXT
         """,
@@ -368,6 +372,7 @@ def run_runtime_migrations() -> None:
         "CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku)",
         "CREATE INDEX IF NOT EXISTS idx_products_category ON products (category)",
         "CREATE INDEX IF NOT EXISTS idx_products_ncm ON products (ncm)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_linked_bill_id_unique ON expenses (linked_bill_id) WHERE linked_bill_id IS NOT NULL",
         "CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills (due_date)",
         "CREATE INDEX IF NOT EXISTS idx_bills_is_paid ON bills (is_paid)",
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements (created_at)",

@@ -1,16 +1,20 @@
-const CACHE_NAME = "dois-irmaos-static-v2";
+const ICON_VERSION = "__ICON_VERSION__";
+const CACHE_NAME = `dois-irmaos-static-${ICON_VERSION}`;
 const APP_SHELL = [
   "/",
   "/index.html",
-  "/manifest.webmanifest",
+  `/manifest.webmanifest?v=${ICON_VERSION}`,
   "/static/css/styles.css",
   "/static/js/app.js",
   "/static/js/api.js",
   "/static/js/helpers.js",
   "/static/js/charts.js",
-  "/static/icons/icon-192.png",
-  "/static/icons/icon-512.png",
-  "/static/icons/apple-touch-icon.png",
+  `/favicon.ico?v=${ICON_VERSION}`,
+  `/static/icons/favicon-16x16.png?v=${ICON_VERSION}`,
+  `/static/icons/favicon-32x32.png?v=${ICON_VERSION}`,
+  `/static/icons/icon-192.png?v=${ICON_VERSION}`,
+  `/static/icons/icon-512.png?v=${ICON_VERSION}`,
+  `/static/icons/apple-touch-icon.png?v=${ICON_VERSION}`,
 ];
 
 const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})$/;

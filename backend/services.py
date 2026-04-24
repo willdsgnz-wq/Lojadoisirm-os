@@ -39,6 +39,10 @@ BILL_STATUSES = ["Pendente", "Pago", "Vencendo hoje", "Atrasado"]
 STOCK_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "AJUSTE"]
 FISCAL_ENVIRONMENTS = ["homologation", "production"]
 FISCAL_PROVIDER_OPTIONS = ["mock", "focus_nfe", "nfe_io", "tecnospeed"]
+DEFAULT_EXPENSE_CATEGORY = "Conta paga"
+AUTO_BILL_EXPENSE_CATEGORY = "Boleto"
+AUTO_BILL_EXPENSE_DESCRIPTION = "BOLETO"
+AUTO_BILL_EXPENSE_PAYMENT_METHOD = "Boleto"
 
 PRODUCT_IMPORT_MAPPING = {
     "sku": "sku",
@@ -271,7 +275,69 @@ def _serialize_nfe_row(row: dict[str, Any]) -> dict[str, Any]:
 def _serialize_expense_row(row: dict[str, Any]) -> dict[str, Any]:
     item = dict(row)
     item["payment_method"] = _normalize_payment_method(item.get("payment_method"), default="-") or "-"
+    item.pop("category", None)
+    item.pop("supplier", None)
+    item.pop("notes", None)
     return item
+
+
+def _payment_date_from_paid_at(value: Any) -> str:
+    cleaned = _clean_text(value)
+    return cleaned[:10] if cleaned else today_iso()
+
+
+def _get_linked_bill_expense(connection: Any, bill_id: int) -> dict[str, Any] | None:
+    row = connection.execute("SELECT * FROM expenses WHERE linked_bill_id = ?", (bill_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def _sync_paid_bill_expense(
+    connection: Any,
+    *,
+    bill_id: int,
+    is_paid: bool,
+    amount: float,
+    payment_date: str,
+) -> None:
+    linked_expense = _get_linked_bill_expense(connection, bill_id)
+
+    if not is_paid:
+        if linked_expense:
+            connection.execute("DELETE FROM expenses WHERE id = ?", (linked_expense["id"],))
+        return
+
+    payload = (
+        payment_date,
+        AUTO_BILL_EXPENSE_DESCRIPTION,
+        AUTO_BILL_EXPENSE_CATEGORY,
+        amount,
+        AUTO_BILL_EXPENSE_PAYMENT_METHOD,
+        "",
+        "",
+    )
+
+    if linked_expense:
+        connection.execute(
+            """
+            UPDATE expenses
+            SET payment_date = ?, description = ?, category = ?, amount = ?,
+                payment_method = ?, supplier = ?, notes = ?
+            WHERE id = ?
+            """,
+            (*payload, linked_expense["id"]),
+        )
+        return
+
+    connection.execute(
+        """
+        INSERT INTO expenses (
+            payment_date, description, category, amount,
+            payment_method, supplier, notes, linked_bill_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (*payload, bill_id),
+    )
 
 
 def _load_products_map(connection: Any, product_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -1313,7 +1379,6 @@ def get_expense(expense_id: int) -> dict[str, Any]:
 def create_expense(payload: dict[str, Any]) -> dict[str, Any]:
     payment_date = ensure_date(payload.get("payment_date"))
     description = _require_text(payload.get("description"), "description")
-    category = _require_text(payload.get("category"), "category")
     amount = _parse_amount(payload.get("amount"), "amount", min_value=0.01, allow_zero=False)
     payment_method = _normalize_payment_method(_require_text(payload.get("payment_method"), "payment_method"))
 
@@ -1329,11 +1394,11 @@ def create_expense(payload: dict[str, Any]) -> dict[str, Any]:
             (
                 payment_date,
                 description,
-                category,
+                DEFAULT_EXPENSE_CATEGORY,
                 amount,
                 payment_method,
-                _clean_text(payload.get("supplier")),
-                _clean_text(payload.get("notes")),
+                "",
+                "",
             ),
         )
         expense_id = cursor.lastrowid
@@ -1359,11 +1424,11 @@ def update_expense(expense_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             (
                 ensure_date(payload.get("payment_date"), current["payment_date"]),
                 _require_text(payload.get("description", current["description"]), "description"),
-                _require_text(payload.get("category", current["category"]), "category"),
+                DEFAULT_EXPENSE_CATEGORY,
                 _parse_amount(payload.get("amount", current["amount"]), "amount", min_value=0.01, allow_zero=False),
                 payment_method,
-                _clean_text(payload.get("supplier") if payload.get("supplier") is not None else current["supplier"]),
-                _clean_text(payload.get("notes") if payload.get("notes") is not None else current["notes"]),
+                "",
+                "",
                 expense_id,
             ),
         )
@@ -1421,12 +1486,20 @@ def create_bill(payload: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         bill_id = cursor.lastrowid
+        _sync_paid_bill_expense(
+            connection,
+            bill_id=bill_id,
+            is_paid=is_paid,
+            amount=amount,
+            payment_date=_payment_date_from_paid_at(now if is_paid else None),
+        )
 
     return get_bill(bill_id)
 
 
 def update_bill(bill_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     current = get_bill(bill_id)
+    next_amount = _parse_amount(payload.get("amount", current["amount"]), "amount", min_value=0.01, allow_zero=False)
     next_is_paid = _parse_bool(payload.get("is_paid"), current["is_paid"])
     now = iso_now()
 
@@ -1447,7 +1520,7 @@ def update_bill(bill_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             (
                 _require_text(payload.get("beneficiary", current["beneficiary"]), "beneficiary"),
                 ensure_date(payload.get("due_date"), current["due_date"]),
-                _parse_amount(payload.get("amount", current["amount"]), "amount", min_value=0.01, allow_zero=False),
+                next_amount,
                 next_is_paid,
                 _clean_text(payload.get("notes") if payload.get("notes") is not None else current.get("notes")),
                 paid_at,
@@ -1455,12 +1528,20 @@ def update_bill(bill_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 bill_id,
             ),
         )
+        _sync_paid_bill_expense(
+            connection,
+            bill_id=bill_id,
+            is_paid=next_is_paid,
+            amount=next_amount,
+            payment_date=_payment_date_from_paid_at(paid_at),
+        )
 
     return get_bill(bill_id)
 
 
 def delete_bill(bill_id: int) -> None:
     with get_connection() as connection:
+        connection.execute("DELETE FROM expenses WHERE linked_bill_id = ?", (bill_id,))
         deleted = connection.execute("DELETE FROM bills WHERE id = ?", (bill_id,)).rowcount
     if not deleted:
         raise ServiceError("Boleto nÃ£o encontrado.", 404)

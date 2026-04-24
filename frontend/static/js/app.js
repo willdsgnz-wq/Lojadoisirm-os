@@ -1210,8 +1210,8 @@ function validateSimplePayload(scope, payload) {
   }
 
   if (scope === "expenses") {
-    if (!payload.payment_date || !payload.description || !payload.category || !payload.payment_method) {
-      throw new Error("Preencha data, descrição, categoria e forma de pagamento.");
+    if (!payload.payment_date || !payload.description || !payload.payment_method) {
+      throw new Error("Preencha data, descrição e forma de pagamento.");
     }
     if (!isValidNumber(payload.amount, { min: 0.01, allowZero: false })) {
       throw new Error("Informe um valor válido para a conta paga.");
@@ -3377,29 +3377,37 @@ function getFilteredExpensesData() {
   const period = getPeriod("expenses");
   const filteredExpenses = getSimpleSearchRecords(
     filterByPeriod(state.data.expenses, "payment_date", period),
-    ["description", "category", "payment_method", "supplier", "notes"],
+    ["description", "payment_method"],
     state.filters.expenses.search,
   );
+  const topExpenses = [...filteredExpenses]
+    .sort((left, right) => Number(right.amount || 0) - Number(left.amount || 0))
+    .slice(0, 6)
+    .map((expense) => ({
+      label: expense.description,
+      value: expense.amount,
+      helper: `${formatDate(expense.payment_date)} • ${expense.payment_method}`,
+    }));
 
   return {
     period,
     filteredExpenses,
-    byCategory: getCategoryTotals(filteredExpenses, "category", "amount"),
     byPayment: getPaymentTotals(filteredExpenses, "payment_method", "amount"),
     recentExpenses: sortByDateDesc(filteredExpenses, "payment_date").slice(0, 6),
+    topExpenses,
   };
 }
 
 
 function renderExpensesInsightsSection() {
-  const { period, byCategory, byPayment } = getFilteredExpensesData();
+  const { period, byPayment, topExpenses } = getFilteredExpensesData();
 
   return `
     <section class="dashboard-grid">
       ${renderBarChart({ title: "Despesas por dia", subtitle: "Últimos 7 dias", data: groupByDay(state.data.expenses, "payment_date", (expense) => expense.amount, 7) })}
       ${renderBarChart({ title: "Despesas por mês", subtitle: "Últimos 6 meses", data: groupByMonth(state.data.expenses, "payment_date", (expense) => expense.amount, 6) })}
-      ${renderStatList({ title: "Totais por categoria", subtitle: period.label, rows: byCategory })}
       ${renderStatList({ title: "Totais por pagamento", subtitle: period.label, rows: byPayment })}
+      ${renderStatList({ title: "Maiores despesas", subtitle: period.label, rows: topExpenses })}
     </section>
   `;
 }
@@ -3423,7 +3431,6 @@ function renderExpensesRecentPanel() {
               <tr>
                 <th>Data</th>
                 <th>Descrição</th>
-                <th>Categoria</th>
                 <th>Pagamento</th>
                 <th>Valor</th>
                 <th></th>
@@ -3433,11 +3440,7 @@ function renderExpensesRecentPanel() {
               ${recentExpenses.map((expense) => `
                 <tr>
                   <td>${formatDate(expense.payment_date)}</td>
-                  <td>
-                    <strong>${escapeHtml(expense.description)}</strong>
-                    <small>${escapeHtml(expense.supplier || "-")}</small>
-                  </td>
-                  <td>${escapeHtml(expense.category)}</td>
+                  <td><strong>${escapeHtml(expense.description)}</strong></td>
                   <td>${escapeHtml(expense.payment_method)}</td>
                   <td>${formatMoney(expense.amount)}</td>
                   <td>${renderTableActions("expense", expense.id)}</td>
@@ -5254,7 +5257,7 @@ function renderExpensesPage() {
   return `
     ${renderHero(
       "Contas pagas",
-      "Registre despesas da loja, acompanhe totais por período e visualize categorias com mais gasto.",
+      "Registre despesas da loja, acompanhe totais por período e lance pagamentos com menos etapas no dia a dia.",
     )}
 
     <article class="panel">
@@ -5269,11 +5272,8 @@ function renderExpensesPage() {
         ${renderFormFeedback("expenses")}
         <label><span>Data do pagamento</span><input type="date" name="payment_date" value="${editing?.payment_date || todayIso()}" required></label>
         <label><span>Descrição</span><input type="text" name="description" value="${escapeHtml(toFormValue(editing?.description))}" required></label>
-        <label><span>Categoria</span><input type="text" name="category" value="${escapeHtml(toFormValue(editing?.category))}" required></label>
         <label><span>Valor</span>${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}</label>
         <label><span>Forma de pagamento</span><select name="payment_method" required>${renderPaymentOptions(editing?.payment_method || state.data.options.payment_methods[0])}</select></label>
-        <label><span>Fornecedor</span><input type="text" name="supplier" value="${escapeHtml(toFormValue(editing?.supplier))}"></label>
-        <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
         <div class="form-actions field-span-2">
           <button type="submit" class="btn btn-primary">${editing ? "Salvar conta" : "Cadastrar conta paga"}</button>
           <button type="button" class="btn btn-secondary" data-action="clear-expenses-form">Limpar formulário</button>
@@ -5283,7 +5283,7 @@ function renderExpensesPage() {
 
     ${renderPeriodToolbar("expenses", {
       showSearch: true,
-      searchPlaceholder: "Buscar por descrição, categoria, fornecedor",
+      searchPlaceholder: "Buscar por descrição ou forma de pagamento",
     })}
 
     <section class="metrics-grid metrics-grid-4">
@@ -5465,21 +5465,25 @@ function buildReport() {
 
   if (moduleName === "expenses") {
     const rows = filterByPeriod(state.data.expenses, "payment_date", period);
+    const totalPaid = sumBy(rows, (item) => item.amount);
+    const averageTicket = rows.length ? totalPaid / rows.length : 0;
+    const largestExpense = [...rows].sort((left, right) => Number(right.amount || 0) - Number(left.amount || 0))[0];
     return {
       title: "Relatório de contas pagas",
       subtitle: period.label,
       metrics: [
-        { label: "Total pago", value: formatMoney(sumBy(rows, (item) => item.amount)), helper: `${rows.length} lançamento(s)` },
-        { label: "Maior categoria", value: getCategoryTotals(rows, "category", "amount")[0]?.label || "-", helper: "Categoria líder" },
+        { label: "Total pago", value: formatMoney(totalPaid), helper: `${rows.length} lançamento(s)` },
+        { label: "Ticket médio", value: formatMoney(averageTicket), helper: "Valor médio por lançamento" },
         { label: "Pagamento mais usado", value: getPaymentTotals(rows, "payment_method", "amount")[0]?.label || "-", helper: "Forma principal" },
+        { label: "Maior lançamento", value: largestExpense ? formatMoney(largestExpense.amount) : "-", helper: largestExpense?.description || "Sem lançamentos" },
       ],
       chart: groupByDay(rows, "payment_date", (item) => item.amount, 7),
-      tableHeaders: ["Data", "Descrição", "Categoria", "Valor"],
-      tableRows: rows.map((item) => [formatDate(item.payment_date), item.description, item.category, formatMoney(item.amount)]),
+      tableHeaders: ["Data", "Descrição", "Pagamento", "Valor"],
+      tableRows: rows.map((item) => [formatDate(item.payment_date), item.description, item.payment_method, formatMoney(item.amount)]),
       csvColumns: [
         { label: "Data", value: (item) => item.payment_date },
         { label: "Descrição", value: (item) => item.description },
-        { label: "Categoria", value: (item) => item.category },
+        { label: "Pagamento", value: (item) => item.payment_method },
         { label: "Valor", value: (item) => item.amount },
       ],
       rawRows: rows,

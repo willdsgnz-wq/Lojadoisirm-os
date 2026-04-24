@@ -20,10 +20,25 @@ load_environment()
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 ASSETS_DIR = FRONTEND_DIR / "assets"
+ICONS_DIR = FRONTEND_DIR / "static" / "icons"
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "8000"))
 NO_CACHE_SUFFIXES = {".html", ".js", ".css", ".json", ".webmanifest"}
-NO_CACHE_NAMES = {"service-worker.js"}
+NO_CACHE_NAMES = {"service-worker.js", "favicon.ico"}
+ICON_VERSION_FILES = (
+    ICONS_DIR / "favicon.ico",
+    ICONS_DIR / "favicon-16x16.png",
+    ICONS_DIR / "favicon-32x32.png",
+    ICONS_DIR / "apple-touch-icon.png",
+    ICONS_DIR / "icon-192.png",
+    ICONS_DIR / "icon-512.png",
+)
+DYNAMIC_TEXT_FILES = {
+    (FRONTEND_DIR / "index.html").resolve(),
+    (FRONTEND_DIR / "nfe-nova.html").resolve(),
+    (FRONTEND_DIR / "manifest.webmanifest").resolve(),
+    (FRONTEND_DIR / "service-worker.js").resolve(),
+}
 
 
 CollectionGetter = Callable[[], list[dict[str, Any]]]
@@ -68,6 +83,25 @@ def _bootstrap_database_if_enabled() -> None:
         seed_database()
 
 
+def _icon_asset_version() -> str:
+    latest_mtime = max((file_path.stat().st_mtime_ns for file_path in ICON_VERSION_FILES if file_path.exists()), default=0)
+    return str(latest_mtime or 1)
+
+
+def _render_dynamic_file(file_path: Path) -> Response:
+    content = file_path.read_text(encoding="utf-8").replace("__ICON_VERSION__", _icon_asset_version())
+    response = make_response(content)
+
+    if file_path.suffix.lower() == ".html":
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+    elif file_path.suffix.lower() == ".js":
+        response.headers["Content-Type"] = "application/javascript; charset=utf-8"
+    elif file_path.suffix.lower() == ".webmanifest":
+        response.headers["Content-Type"] = "application/manifest+json; charset=utf-8"
+
+    return _set_static_headers(response, file_path)
+
+
 def _set_static_headers(response: Response, file_path: Path) -> Response:
     if file_path.suffix.lower() in NO_CACHE_SUFFIXES or file_path.name in NO_CACHE_NAMES:
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -80,22 +114,34 @@ def _set_static_headers(response: Response, file_path: Path) -> Response:
     return response
 
 
+def _serve_frontend_file(file_path: Path) -> Response:
+    if not file_path.is_file():
+        abort(404)
+
+    resolved = file_path.resolve()
+    if FRONTEND_DIR not in resolved.parents and resolved != FRONTEND_DIR:
+        abort(403)
+
+    if resolved in DYNAMIC_TEXT_FILES:
+        return _render_dynamic_file(resolved)
+
+    relative_path = resolved.relative_to(FRONTEND_DIR).as_posix()
+    response = make_response(send_from_directory(FRONTEND_DIR, relative_path))
+    return _set_static_headers(response, resolved)
+
+
 def _serve_frontend(path: str) -> Response:
     if not path:
-        file_path = FRONTEND_DIR / "index.html"
-        return _set_static_headers(make_response(send_from_directory(FRONTEND_DIR, "index.html")), file_path)
+        return _serve_frontend_file(FRONTEND_DIR / "index.html")
 
     requested = (FRONTEND_DIR / path).resolve()
     if FRONTEND_DIR not in requested.parents and requested != FRONTEND_DIR:
         abort(403)
 
     if requested.is_file():
-        relative_path = requested.relative_to(FRONTEND_DIR).as_posix()
-        response = make_response(send_from_directory(FRONTEND_DIR, relative_path))
-        return _set_static_headers(response, requested)
+        return _serve_frontend_file(requested)
 
-    file_path = FRONTEND_DIR / "index.html"
-    return _set_static_headers(make_response(send_from_directory(FRONTEND_DIR, "index.html")), file_path)
+    return _serve_frontend_file(FRONTEND_DIR / "index.html")
 
 
 def _current_user() -> dict[str, Any] | None:
@@ -279,8 +325,7 @@ def api_nfe_download(nfe_id: int, file_type: str) -> Response:
 def nfe_new_page() -> Response:
     if not _current_user():
         return _serve_frontend("")
-    file_path = FRONTEND_DIR / "nfe-nova.html"
-    return _set_static_headers(make_response(send_from_directory(FRONTEND_DIR, "nfe-nova.html")), file_path)
+    return _serve_frontend_file(FRONTEND_DIR / "nfe-nova.html")
 
 
 @app.route("/api/<entity>", methods=["GET", "POST"])
@@ -341,7 +386,7 @@ def frontend(path: str) -> Response:
         filename = path[len("assets/") :]
         return serve_assets(filename)
     if path == "favicon.ico":
-        return Response(status=204)
+        return _serve_frontend_file(ICONS_DIR / "favicon.ico")
     return _serve_frontend(path)
 
 

@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     payment_method TEXT NOT NULL,
     supplier TEXT,
     notes TEXT,
+    linked_bill_id BIGINT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
 );
 
@@ -278,6 +279,9 @@ CREATE INDEX IF NOT EXISTS idx_customers_name ON customers (name);
 CREATE INDEX IF NOT EXISTS idx_sales_date ON sales (sale_date);
 CREATE INDEX IF NOT EXISTS idx_quotes_date ON quotes (quote_date);
 CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (payment_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_linked_bill_id_unique
+    ON expenses (linked_bill_id)
+    WHERE linked_bill_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_checks_due_date ON checks (due_date);
 CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills (due_date);
 CREATE INDEX IF NOT EXISTS idx_bills_is_paid ON bills (is_paid);
