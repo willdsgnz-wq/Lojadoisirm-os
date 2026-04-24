@@ -1,4 +1,4 @@
-import { api } from "/static/js/api.js";
+﻿import { api } from "/static/js/api.js";
 
 const BRAND_NAME = "Material de Construção Dois Irmãos";
 const moneyFormatter = new Intl.NumberFormat("pt-BR", {
@@ -21,10 +21,7 @@ const state = {
   feedback: null,
   lastEmission: null,
   draft: {
-    customer_name: "",
-    customer_document: "",
-    customer_address: "",
-    customer_phone: "",
+    customer_id: "",
     payment_method: "Dinheiro",
     notes: "",
     product_search: "",
@@ -82,6 +79,7 @@ function render() {
     && state.settings.state,
   );
   const totalAmount = getItemsTotal();
+  const selectedCustomer = getSelectedCustomer();
 
   elements.root.innerHTML = `
     <section class="metrics-grid metrics-grid-4">
@@ -131,35 +129,20 @@ function render() {
         <div class="section-header">
           <div>
             <h3>Cliente</h3>
-            <p>Você pode digitar manualmente os dados do cliente para montar a nota com rapidez.</p>
+            <p>Selecione um cliente cadastrado para preencher automaticamente os dados fiscais da NF-e.</p>
           </div>
         </div>
         <div class="form-grid nfe-form-grid">
           <label class="field-span-2">
-            <span>Nome do cliente</span>
-            <input
-              type="text"
-              name="customer_name"
-              list="customer-name-suggestions"
-              value="${escapeHtml(state.draft.customer_name)}"
-              placeholder="Ex.: João da Silva"
-              required
-            >
-            <datalist id="customer-name-suggestions">
-              ${state.customers.map((customer) => `<option value="${escapeHtml(customer.name || "")}"></option>`).join("")}
-            </datalist>
-          </label>
-          <label>
-            <span>CPF/CNPJ</span>
-            <input type="text" name="customer_document" value="${escapeHtml(state.draft.customer_document)}" placeholder="Somente números ou formatado">
-          </label>
-          <label>
-            <span>Telefone</span>
-            <input type="text" name="customer_phone" value="${escapeHtml(state.draft.customer_phone)}" placeholder="(00) 00000-0000">
-          </label>
-          <label class="field-span-2">
-            <span>Endereço</span>
-            <input type="text" name="customer_address" value="${escapeHtml(state.draft.customer_address)}" placeholder="Rua, número, bairro, cidade">
+            <span>Selecionar cliente</span>
+            <select name="customer_id" required>
+              <option value="">Selecione um cliente cadastrado</option>
+              ${state.customers.map((customer) => `
+                <option value="${customer.id}" ${String(state.draft.customer_id) === String(customer.id) ? "selected" : ""}>
+                  ${escapeHtml(buildCustomerOptionLabel(customer))}
+                </option>
+              `).join("")}
+            </select>
           </label>
           <label>
             <span>Forma de pagamento</span>
@@ -173,6 +156,37 @@ function render() {
             <span>Observações</span>
             <textarea name="notes" rows="4" placeholder="Informações complementares da NF-e">${escapeHtml(state.draft.notes)}</textarea>
           </label>
+          ${selectedCustomer ? `
+            <div class="field-span-2 nfe-customer-summary">
+              <div class="nfe-customer-summary-grid">
+                <article class="quick-summary-card">
+                  <span>Destinatário</span>
+                  <strong>${escapeHtml(selectedCustomer.name || "-")}</strong>
+                  <small>${escapeHtml(selectedCustomer.person_type === "PJ" ? "Pessoa jurídica" : "Pessoa física")}</small>
+                </article>
+                <article class="quick-summary-card">
+                  <span>Documento</span>
+                  <strong>${escapeHtml(selectedCustomer.document_formatted || "-")}</strong>
+                  <small>${escapeHtml(selectedCustomer.ie_indicator === "Nao contribuinte" ? "Não contribuinte" : selectedCustomer.ie_indicator || "-")}</small>
+                </article>
+                <article class="quick-summary-card">
+                  <span>Localidade</span>
+                  <strong>${escapeHtml([selectedCustomer.city, selectedCustomer.state].filter(Boolean).join("/") || "-")}</strong>
+                  <small>IBGE ${escapeHtml(selectedCustomer.city_ibge_code || "-")}</small>
+                </article>
+              </div>
+              <div class="nfe-customer-summary-details">
+                <p><strong>Endereço:</strong> ${escapeHtml(buildCustomerAddress(selectedCustomer))}</p>
+                <p><strong>Contato:</strong> ${escapeHtml(selectedCustomer.phone || selectedCustomer.email || "Não informado")}</p>
+                <p><strong>IE:</strong> ${escapeHtml(selectedCustomer.state_registration || "Não se aplica")}</p>
+              </div>
+            </div>
+          ` : `
+            <div class="field-span-2 empty-state compact">
+              <strong>Selecione um cliente para continuar</strong>
+              <p>O XML e o DANFE usarão automaticamente os dados fiscais do cadastro escolhido.</p>
+            </div>
+          `}
         </div>
       </section>
 
@@ -376,8 +390,9 @@ function handleChange(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
-  if (target instanceof HTMLInputElement && target.name === "customer_name") {
-    autofillCustomerByName(target.value);
+  if (target instanceof HTMLSelectElement && target.name === "customer_id") {
+    state.draft.customer_id = target.value;
+    render();
     return;
   }
 
@@ -445,8 +460,8 @@ async function handleSubmit(event) {
     return;
   }
 
-  if (!String(state.draft.customer_name || "").trim()) {
-    state.feedback = { tone: "error", message: "Informe o nome do cliente para emitir a NF-e." };
+  if (!String(state.draft.customer_id || "").trim()) {
+    state.feedback = { tone: "error", message: "Selecione um cliente cadastrado para emitir a NF-e." };
     render();
     return;
   }
@@ -456,10 +471,7 @@ async function handleSubmit(event) {
 
   try {
     const payload = {
-      customer_name: state.draft.customer_name,
-      customer_document: state.draft.customer_document,
-      customer_address: state.draft.customer_address,
-      customer_phone: state.draft.customer_phone,
+      customer_id: Number(state.draft.customer_id),
       payment_method: state.draft.payment_method,
       notes: state.draft.notes,
       items: state.items.map((item) => ({
@@ -526,18 +538,30 @@ function findProduct(searchValue) {
   });
 }
 
-function autofillCustomerByName(name) {
-  const normalizedName = normalizeText(name);
-  if (!normalizedName) return;
 
-  const customer = state.customers.find((item) => normalizeText(item.name) === normalizedName);
-  if (!customer) return;
-
-  state.draft.customer_document = state.draft.customer_document || customer.document || "";
-  state.draft.customer_address = state.draft.customer_address || customer.address || "";
-  state.draft.customer_phone = state.draft.customer_phone || customer.phone || "";
-  render();
+function getSelectedCustomer() {
+  const selectedId = String(state.draft.customer_id || "").trim();
+  if (!selectedId) return null;
+  return state.customers.find((customer) => String(customer.id) === selectedId) || null;
 }
+
+
+function buildCustomerOptionLabel(customer) {
+  const name = customer.name || "Cliente";
+  const document = customer.document_formatted || customer.document || "Sem documento";
+  const city = [customer.city, customer.state].filter(Boolean).join("/");
+  return [name, document, city].filter(Boolean).join(" - ");
+}
+
+
+function buildCustomerAddress(customer) {
+  const line = [customer.street, customer.number].filter(Boolean).join(", ");
+  const extended = [line, customer.complement].filter(Boolean).join(", ");
+  const cityState = [customer.city, customer.state].filter(Boolean).join("/");
+  const parts = [extended, customer.district, cityState, customer.zip_code_formatted ? `CEP ${customer.zip_code_formatted}` : ""];
+  return parts.filter(Boolean).join(", ") || customer.address || "-";
+}
+
 
 function updateItemField(itemId, field, rawValue) {
   state.items = state.items.map((item) => {
@@ -579,10 +603,7 @@ function getItemsTotal() {
 function resetDraft() {
   state.items = [];
   state.draft = {
-    customer_name: "",
-    customer_document: "",
-    customer_address: "",
-    customer_phone: "",
+    customer_id: "",
     payment_method: "Dinheiro",
     notes: "",
     product_search: "",

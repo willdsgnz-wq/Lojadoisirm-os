@@ -1,0 +1,12 @@
+Nao foi possivel iniciar o aplicativo.
+
+Arquivo de log: C:\Users\User\Documents\Codex\2026-04-19-quero-que-voc-crie-do-zero\loja-materiais\run_app_error.log
+
+Traceback (most recent call last):
+  File "C:\Users\User\Documents\Codex\2026-04-19-quero-que-voc-crie-do-zero\loja-materiais\run_app.pyw", line 193, in <module>
+    main()
+  File "C:\Users\User\Documents\Codex\2026-04-19-quero-que-voc-crie-do-zero\loja-materiais\run_app.pyw", line 174, in main
+    from app import app
+  File "C:\Users\User\Documents\Codex\2026-04-19-quero-que-voc-crie-do-zero\loja-materiais\app.py", line 8, in <module>
+    from flask import Flask, Response, abort, jsonify, make_response, request, send_file, send_from_directory
+ModuleNotFoundError: No module named 'flask'

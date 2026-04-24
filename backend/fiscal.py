@@ -210,10 +210,9 @@ class DanfeService:
 
         customer = sale.get("customer") or {}
         customer_name = str(sale.get("customer_name") or customer.get("name") or "CONSUMIDOR FINAL").strip()
-        customer_document = customer.get("document") or ""
-        customer_address = customer.get("address") or ""
+        customer_document = customer.get("document") or customer.get("cpf") or customer.get("cnpj") or ""
         customer_phone = customer.get("phone") or ""
-        customer_parts = _split_address_fields(customer_address)
+        customer_parts = _customer_address_parts(customer)
 
         number_text = _format_nfe_number(nfe_record.get("number_nfe"))
         series_text = _format_series(nfe_record.get("series_nfe"))
@@ -1145,7 +1144,24 @@ def _build_nfe_xml(
     customer = ET.SubElement(root, "destinatario")
     customer_payload = payload.get("customer") or {}
     ET.SubElement(customer, "nome").text = str(payload.get("customer_name") or customer_payload.get("name") or "Consumidor final")
-    ET.SubElement(customer, "documento").text = str(customer_payload.get("document") or "")
+    ET.SubElement(customer, "tipoPessoa").text = str(customer_payload.get("person_type") or "")
+    ET.SubElement(customer, "documento").text = str(
+        customer_payload.get("document") or customer_payload.get("cpf") or customer_payload.get("cnpj") or ""
+    )
+    ET.SubElement(customer, "cpf").text = str(customer_payload.get("cpf") or "")
+    ET.SubElement(customer, "cnpj").text = str(customer_payload.get("cnpj") or "")
+    ET.SubElement(customer, "email").text = str(customer_payload.get("email") or "")
+    ET.SubElement(customer, "telefone").text = str(customer_payload.get("phone") or "")
+    ET.SubElement(customer, "cep").text = str(customer_payload.get("zip_code") or "")
+    ET.SubElement(customer, "logradouro").text = str(customer_payload.get("street") or "")
+    ET.SubElement(customer, "numero").text = str(customer_payload.get("number") or "")
+    ET.SubElement(customer, "complemento").text = str(customer_payload.get("complement") or "")
+    ET.SubElement(customer, "bairro").text = str(customer_payload.get("district") or "")
+    ET.SubElement(customer, "municipio").text = str(customer_payload.get("city") or "")
+    ET.SubElement(customer, "uf").text = str(customer_payload.get("state") or "")
+    ET.SubElement(customer, "codigoMunicipioIBGE").text = str(customer_payload.get("city_ibge_code") or "")
+    ET.SubElement(customer, "indicadorIE").text = str(customer_payload.get("ie_indicator") or "")
+    ET.SubElement(customer, "inscricaoEstadual").text = str(customer_payload.get("state_registration") or "")
     ET.SubElement(customer, "endereco").text = str(customer_payload.get("address") or "")
 
     sale = ET.SubElement(root, "venda")
@@ -1278,6 +1294,32 @@ def _split_address_fields(address: Any) -> dict[str, str]:
         "cep": cep,
         "state_registration": "",
     }
+
+
+def _customer_address_parts(customer: dict[str, Any]) -> dict[str, str]:
+    street = str(customer.get("street") or "").strip()
+    number = str(customer.get("number") or "").strip()
+    complement = str(customer.get("complement") or "").strip()
+    district = str(customer.get("district") or "").strip()
+    city = str(customer.get("city") or "").strip()
+    state = str(customer.get("state") or "").strip().upper()
+    cep = _format_zip(customer.get("zip_code") or "")
+    state_registration = str(customer.get("state_registration") or "").strip()
+
+    if street or district or city or state or cep:
+        address_line = ", ".join(part for part in [street, number] if part)
+        if complement:
+            address_line = ", ".join(part for part in [address_line, complement] if part)
+        return {
+            "address": address_line or str(customer.get("address") or "").strip(),
+            "district": district,
+            "city": city,
+            "state": state,
+            "cep": cep,
+            "state_registration": state_registration,
+        }
+
+    return _split_address_fields(customer.get("address") or "")
 
 
 def _truncate_text(value: Any, max_length: int) -> str:

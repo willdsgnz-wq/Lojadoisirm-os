@@ -39,8 +39,26 @@ CREATE TABLE IF NOT EXISTS products (
 -- =========================
 CREATE TABLE IF NOT EXISTS customers (
     id BIGSERIAL PRIMARY KEY,
+    person_type TEXT NOT NULL DEFAULT 'PF',
     name TEXT NOT NULL,
+    trade_name TEXT,
+    cpf TEXT,
+    cnpj TEXT,
     phone TEXT,
+    whatsapp TEXT,
+    email TEXT,
+    zip_code TEXT,
+    street TEXT,
+    number TEXT,
+    complement TEXT,
+    district TEXT,
+    city TEXT,
+    state TEXT,
+    city_ibge_code TEXT,
+    ie_indicator TEXT NOT NULL DEFAULT 'Nao contribuinte',
+    state_registration TEXT,
+    rg TEXT,
+    birth_date TEXT,
     document TEXT,
     address TEXT,
     notes TEXT,
@@ -136,7 +154,7 @@ CREATE TABLE IF NOT EXISTS expenses (
 -- =========================
 CREATE TABLE IF NOT EXISTS checks (
     id BIGSERIAL PRIMARY KEY,
-    check_number TEXT NOT NULL UNIQUE,
+    check_number TEXT NOT NULL,
     beneficiary TEXT NOT NULL,
     amount DOUBLE PRECISION NOT NULL,
     issue_date TEXT NOT NULL,
@@ -282,6 +300,10 @@ CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses (payment_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_linked_bill_id_unique
     ON expenses (linked_bill_id)
     WHERE linked_bill_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_checks_check_number_unique
+    ON checks (check_number)
+    WHERE check_number <> 'S/N';
 CREATE INDEX IF NOT EXISTS idx_checks_due_date ON checks (due_date);
 CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills (due_date);
 CREATE INDEX IF NOT EXISTS idx_bills_is_paid ON bills (is_paid);

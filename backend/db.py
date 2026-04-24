@@ -197,6 +197,78 @@ def run_runtime_migrations() -> None:
         ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE
         """,
         """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS person_type TEXT DEFAULT 'PF'
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS trade_name TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS cpf TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS cnpj TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS email TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS whatsapp TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS zip_code TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS street TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS number TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS complement TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS district TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS city TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS state TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS city_ibge_code TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS ie_indicator TEXT DEFAULT 'Nao contribuinte'
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS state_registration TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS rg TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS customers
+        ADD COLUMN IF NOT EXISTS birth_date TEXT
+        """,
+        """
         ALTER TABLE IF EXISTS expenses
         ADD COLUMN IF NOT EXISTS linked_bill_id BIGINT
         """,
@@ -258,6 +330,28 @@ def run_runtime_migrations() -> None:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP::text
         )
+        """,
+        """
+        ALTER TABLE IF EXISTS checks
+        DROP CONSTRAINT IF EXISTS checks_check_number_key
+        """,
+        """
+        DROP INDEX IF EXISTS checks_check_number_key
+        """,
+        """
+        UPDATE checks
+        SET check_number = 'S/N'
+        WHERE check_number IS NOT NULL
+          AND regexp_replace(
+                translate(
+                    lower(trim(check_number)),
+                    'áàâãäéèêëíìîïóòôõöúùûüçñ',
+                    'aaaaaeeeeiiiiooooouuuucn'
+                ),
+                '[^a-z0-9]+',
+                '',
+                'g'
+              ) IN ('sn', 'semnumero')
         """,
         """
         CREATE TABLE IF NOT EXISTS nfe_issued (
@@ -372,7 +466,11 @@ def run_runtime_migrations() -> None:
         "CREATE INDEX IF NOT EXISTS idx_products_sku ON products (sku)",
         "CREATE INDEX IF NOT EXISTS idx_products_category ON products (category)",
         "CREATE INDEX IF NOT EXISTS idx_products_ncm ON products (ncm)",
+        "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers (name)",
+        "CREATE INDEX IF NOT EXISTS idx_customers_person_type ON customers (person_type)",
+        "CREATE INDEX IF NOT EXISTS idx_customers_city ON customers (city)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_linked_bill_id_unique ON expenses (linked_bill_id) WHERE linked_bill_id IS NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_checks_check_number_unique ON checks (check_number) WHERE check_number <> 'S/N'",
         "CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills (due_date)",
         "CREATE INDEX IF NOT EXISTS idx_bills_is_paid ON bills (is_paid)",
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_created_at ON stock_movements (created_at)",
@@ -392,6 +490,57 @@ def run_runtime_migrations() -> None:
         connection.execute("UPDATE products SET sku = code WHERE sku IS NULL OR TRIM(sku) = ''")
         connection.execute("UPDATE products SET active = TRUE WHERE active IS NULL")
         connection.execute("UPDATE products SET notes = COALESCE(notes, '') WHERE notes IS NULL")
+        connection.execute(
+            """
+            UPDATE customers
+            SET person_type = CASE
+                WHEN length(regexp_replace(COALESCE(document, ''), '[^0-9]+', '', 'g')) = 14 THEN 'PJ'
+                ELSE 'PF'
+            END
+            WHERE person_type IS NULL OR TRIM(person_type) = ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE customers
+            SET cpf = regexp_replace(COALESCE(document, ''), '[^0-9]+', '', 'g')
+            WHERE (cpf IS NULL OR TRIM(cpf) = '')
+              AND length(regexp_replace(COALESCE(document, ''), '[^0-9]+', '', 'g')) = 11
+            """
+        )
+        connection.execute(
+            """
+            UPDATE customers
+            SET cnpj = regexp_replace(COALESCE(document, ''), '[^0-9]+', '', 'g')
+            WHERE (cnpj IS NULL OR TRIM(cnpj) = '')
+              AND length(regexp_replace(COALESCE(document, ''), '[^0-9]+', '', 'g')) = 14
+            """
+        )
+        connection.execute(
+            """
+            UPDATE customers
+            SET street = address
+            WHERE (street IS NULL OR TRIM(street) = '')
+              AND address IS NOT NULL
+              AND TRIM(address) <> ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE customers
+            SET whatsapp = phone
+            WHERE (whatsapp IS NULL OR TRIM(whatsapp) = '')
+              AND phone IS NOT NULL
+              AND TRIM(phone) <> ''
+            """
+        )
+        connection.execute(
+            """
+            UPDATE customers
+            SET ie_indicator = 'Nao contribuinte'
+            WHERE ie_indicator IS NULL OR TRIM(ie_indicator) = ''
+            """
+        )
         connection.execute("UPDATE nfe_issued SET source_type = COALESCE(NULLIF(source_type, ''), 'sale') WHERE source_type IS NULL OR source_type = ''")
         connection.execute(
             """

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import unicodedata
 from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
@@ -39,6 +40,8 @@ BILL_STATUSES = ["Pendente", "Pago", "Vencendo hoje", "Atrasado"]
 STOCK_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "AJUSTE"]
 FISCAL_ENVIRONMENTS = ["homologation", "production"]
 FISCAL_PROVIDER_OPTIONS = ["mock", "focus_nfe", "nfe_io", "tecnospeed"]
+CUSTOMER_PERSON_TYPES = ["PF", "PJ"]
+CUSTOMER_IE_INDICATORS = ["Nao contribuinte", "Isento", "Contribuinte"]
 DEFAULT_EXPENSE_CATEGORY = "Conta paga"
 AUTO_BILL_EXPENSE_CATEGORY = "Boleto"
 AUTO_BILL_EXPENSE_DESCRIPTION = "BOLETO"
@@ -70,6 +73,21 @@ class ServiceError(Exception):
 
 def _clean_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _normalize_lookup_text(value: Any) -> str:
+    cleaned = _clean_text(value)
+    normalized = unicodedata.normalize("NFD", cleaned)
+    ascii_only = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    return "".join(char for char in ascii_only.lower() if char.isalnum())
+
+
+def _normalize_check_number(value: Any) -> str:
+    cleaned = _require_text(value, "check_number")
+    normalized = _normalize_lookup_text(cleaned)
+    if normalized in {"sn", "semnumero"}:
+        return "S/N"
+    return cleaned
 
 
 def _normalize_payment_method(value: Any, default: str = "") -> str:
@@ -357,6 +375,310 @@ def _current_sale_date() -> str:
 
 def _default_customer_name(row: dict[str, Any]) -> str:
     return row.get("customer_name") or "Consumidor final"
+
+
+def _format_customer_document(value: Any) -> str:
+    digits = _clean_digits(value)
+    if len(digits) == 11:
+        return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}"
+    if len(digits) == 14:
+        return f"{digits[:2]}.{digits[2:5]}.{digits[5:8]}/{digits[8:12]}-{digits[12:]}"
+    return _clean_text(value)
+
+
+def _format_zip_code(value: Any) -> str:
+    digits = _clean_digits(value)
+    if len(digits) == 8:
+        return f"{digits[:5]}-{digits[5:]}"
+    return _clean_text(value)
+
+
+def _normalize_customer_person_type(value: Any, document_digits: str = "", *, strict: bool = False) -> str:
+    normalized = _normalize_lookup_text(value)
+    mapping = {
+        "pf": "PF",
+        "pessoafisica": "PF",
+        "fisica": "PF",
+        "pj": "PJ",
+        "pessoajuridica": "PJ",
+        "juridica": "PJ",
+    }
+
+    if not normalized:
+        if len(document_digits) == 14:
+            return "PJ"
+        return "PF"
+
+    person_type = mapping.get(normalized)
+    if person_type:
+        return person_type
+    if strict:
+        raise ServiceError("Selecione um tipo de cliente valido: Pessoa Fisica ou Pessoa Juridica.")
+    return "PF"
+
+
+def _normalize_customer_ie_indicator(value: Any, *, strict: bool = False) -> str:
+    normalized = _normalize_lookup_text(value)
+    mapping = {
+        "naocontribuinte": "Nao contribuinte",
+        "naocontribuinteicms": "Nao contribuinte",
+        "isento": "Isento",
+        "contribuinte": "Contribuinte",
+    }
+    if not normalized:
+        return "Nao contribuinte"
+    indicator = mapping.get(normalized)
+    if indicator:
+        return indicator
+    if strict:
+        raise ServiceError("Selecione um indicador de IE valido.")
+    return "Nao contribuinte"
+
+
+def _compose_customer_address(customer: dict[str, Any]) -> str:
+    street = _clean_text(customer.get("street"))
+    number = _clean_text(customer.get("number"))
+    complement = _clean_text(customer.get("complement"))
+    district = _clean_text(customer.get("district"))
+    city = _clean_text(customer.get("city"))
+    state = _clean_text(customer.get("state")).upper()
+    zip_code = _format_zip_code(customer.get("zip_code"))
+
+    line_one = ", ".join(part for part in [street, number] if part)
+    if complement:
+        line_one = ", ".join(part for part in [line_one, complement] if part)
+    city_state = "/".join(part for part in [city, state] if part)
+
+    parts = [line_one, district, city_state]
+    if zip_code:
+        parts.append(f"CEP {zip_code}")
+    return ", ".join(part for part in parts if part)
+
+
+def _serialize_customer(row: dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    legacy_digits = _clean_digits(item.get("document"))
+    cpf = _clean_digits(item.get("cpf"))
+    cnpj = _clean_digits(item.get("cnpj"))
+    if not cpf and not cnpj:
+        if len(legacy_digits) == 11:
+            cpf = legacy_digits
+        elif len(legacy_digits) == 14:
+            cnpj = legacy_digits
+
+    item["person_type"] = _normalize_customer_person_type(item.get("person_type"), cpf or cnpj or legacy_digits)
+    item["cpf"] = cpf
+    item["cnpj"] = cnpj
+    item["document"] = cpf or cnpj or legacy_digits
+    item["document_formatted"] = _format_customer_document(item["document"])
+    item["trade_name"] = _clean_text(item.get("trade_name"))
+    item["phone"] = _clean_text(item.get("phone"))
+    item["whatsapp"] = _clean_text(item.get("whatsapp"))
+    item["email"] = _clean_text(item.get("email"))
+    item["zip_code"] = _clean_digits(item.get("zip_code"))
+    item["zip_code_formatted"] = _format_zip_code(item["zip_code"])
+    item["street"] = _clean_text(item.get("street"))
+    item["number"] = _clean_text(item.get("number"))
+    item["complement"] = _clean_text(item.get("complement"))
+    item["district"] = _clean_text(item.get("district"))
+    item["city"] = _clean_text(item.get("city"))
+    item["state"] = _clean_text(item.get("state")).upper()
+    item["city_ibge_code"] = _clean_digits(item.get("city_ibge_code"))
+    item["ie_indicator"] = _normalize_customer_ie_indicator(item.get("ie_indicator"))
+    item["state_registration"] = _clean_text(item.get("state_registration"))
+    item["rg"] = _clean_text(item.get("rg"))
+    item["birth_date"] = _clean_text(item.get("birth_date"))
+    if item["person_type"] != "PF":
+        item["rg"] = ""
+        item["birth_date"] = ""
+    if item["ie_indicator"] != "Contribuinte":
+        item["state_registration"] = ""
+    item["address"] = _compose_customer_address(item) or _clean_text(item.get("address"))
+    item["name"] = _clean_text(item.get("name"))
+    item["is_company"] = item["person_type"] == "PJ"
+    item["requires_state_registration"] = item["ie_indicator"] == "Contribuinte"
+    item["city_label"] = " / ".join(part for part in [item["city"], item["state"]] if part)
+    return item
+
+
+def _validate_cpf(value: Any) -> str:
+    digits = _clean_digits(value)
+    if len(digits) != 11 or digits == digits[0] * 11:
+        raise ServiceError("Informe um CPF valido com 11 digitos.")
+
+    for digit_index in range(9, 11):
+        total = sum(int(digits[position]) * ((digit_index + 1) - position) for position in range(digit_index))
+        expected = (total * 10) % 11
+        expected = 0 if expected == 10 else expected
+        if expected != int(digits[digit_index]):
+            raise ServiceError("Informe um CPF valido.")
+    return digits
+
+
+def _ensure_customer_document_not_duplicated(
+    connection: Any,
+    *,
+    cpf: str = "",
+    cnpj: str = "",
+    exclude_id: int | None = None,
+) -> None:
+    if cpf:
+        params: list[Any] = [cpf]
+        query = "SELECT id, name FROM customers WHERE cpf = ?"
+        if exclude_id:
+            query += " AND id <> ?"
+            params.append(exclude_id)
+        row = connection.execute(query + " LIMIT 1", tuple(params)).fetchone()
+        if row:
+            raise ServiceError(f"Ja existe um cliente cadastrado com esse CPF: {row['name']}.", 409)
+
+    if cnpj:
+        params = [cnpj]
+        query = "SELECT id, name FROM customers WHERE cnpj = ?"
+        if exclude_id:
+            query += " AND id <> ?"
+            params.append(exclude_id)
+        row = connection.execute(query + " LIMIT 1", tuple(params)).fetchone()
+        if row:
+            raise ServiceError(f"Ja existe um cliente cadastrado com esse CNPJ: {row['name']}.", 409)
+
+
+def _build_customer_values(payload: dict[str, Any], current: dict[str, Any] | None = None) -> dict[str, Any]:
+    current = current or {}
+    legacy_document = payload.get("document") if payload.get("document") is not None else current.get("document")
+    legacy_digits = _clean_digits(legacy_document)
+    raw_cpf = payload.get("cpf") if payload.get("cpf") is not None else current.get("cpf")
+    raw_cnpj = payload.get("cnpj") if payload.get("cnpj") is not None else current.get("cnpj")
+    cpf_digits = _clean_digits(raw_cpf)
+    cnpj_digits = _clean_digits(raw_cnpj)
+
+    if not cpf_digits and not cnpj_digits and legacy_digits:
+        if len(legacy_digits) == 11:
+            cpf_digits = legacy_digits
+        elif len(legacy_digits) == 14:
+            cnpj_digits = legacy_digits
+
+    person_type = _normalize_customer_person_type(
+        payload.get("person_type") if payload.get("person_type") is not None else current.get("person_type"),
+        cpf_digits or cnpj_digits or legacy_digits,
+        strict=True,
+    )
+
+    name_label = "nome_completo" if person_type == "PF" else "razao_social"
+    name = _require_text(payload.get("name") if payload.get("name") is not None else current.get("name"), name_label)
+    trade_name = _clean_text(payload.get("trade_name") if payload.get("trade_name") is not None else current.get("trade_name"))
+    phone = _clean_text(payload.get("phone") if payload.get("phone") is not None else current.get("phone"))
+    whatsapp = _clean_text(payload.get("whatsapp") if payload.get("whatsapp") is not None else current.get("whatsapp"))
+    email = _clean_text(payload.get("email") if payload.get("email") is not None else current.get("email"))
+    if email and ("@" not in email or "." not in email.split("@")[-1]):
+        raise ServiceError("Informe um e-mail valido para o cliente.")
+
+    zip_code = _clean_digits(payload.get("zip_code") if payload.get("zip_code") is not None else current.get("zip_code"))
+    if len(zip_code) != 8:
+        raise ServiceError("Informe um CEP valido com 8 digitos.")
+
+    street = _require_text(payload.get("street") if payload.get("street") is not None else current.get("street"), "logradouro")
+    number = _require_text(payload.get("number") if payload.get("number") is not None else current.get("number"), "numero")
+    complement = _clean_text(payload.get("complement") if payload.get("complement") is not None else current.get("complement"))
+    district = _require_text(payload.get("district") if payload.get("district") is not None else current.get("district"), "bairro")
+    city = _require_text(payload.get("city") if payload.get("city") is not None else current.get("city"), "cidade")
+    state = _clean_text(payload.get("state") if payload.get("state") is not None else current.get("state")).upper()
+    if len(state) != 2 or not state.isalpha():
+        raise ServiceError("Informe uma UF valida com 2 letras.")
+
+    city_ibge_code = _clean_digits(
+        payload.get("city_ibge_code") if payload.get("city_ibge_code") is not None else current.get("city_ibge_code")
+    )
+    if len(city_ibge_code) != 7:
+        raise ServiceError("Informe o codigo IBGE do municipio com 7 digitos.")
+
+    ie_indicator = _normalize_customer_ie_indicator(
+        payload.get("ie_indicator") if payload.get("ie_indicator") is not None else current.get("ie_indicator"),
+        strict=True,
+    )
+    state_registration = _clean_text(
+        payload.get("state_registration")
+        if payload.get("state_registration") is not None
+        else current.get("state_registration")
+    )
+    if ie_indicator == "Contribuinte" and not state_registration:
+        raise ServiceError("A inscricao estadual e obrigatoria para cliente contribuinte.")
+    if ie_indicator != "Contribuinte":
+        state_registration = ""
+
+    if person_type == "PF":
+        cpf_digits = _validate_cpf(cpf_digits or legacy_digits)
+        cnpj_digits = ""
+        rg = _clean_text(payload.get("rg") if payload.get("rg") is not None else current.get("rg"))
+        birth_date = _clean_text(payload.get("birth_date") if payload.get("birth_date") is not None else current.get("birth_date"))
+        if birth_date:
+            birth_date = ensure_date(birth_date)
+        trade_name = ""
+    else:
+        cnpj_digits = _validate_cnpj(cnpj_digits or legacy_digits)
+        cpf_digits = ""
+        rg = ""
+        birth_date = ""
+
+    values = {
+        "person_type": person_type,
+        "name": name,
+        "trade_name": trade_name,
+        "cpf": cpf_digits,
+        "cnpj": cnpj_digits,
+        "phone": phone,
+        "whatsapp": whatsapp,
+        "email": email,
+        "zip_code": zip_code,
+        "street": street,
+        "number": number,
+        "complement": complement,
+        "district": district,
+        "city": city,
+        "state": state,
+        "city_ibge_code": city_ibge_code,
+        "ie_indicator": ie_indicator,
+        "state_registration": state_registration,
+        "rg": rg,
+        "birth_date": birth_date,
+        "notes": _clean_text(payload.get("notes") if payload.get("notes") is not None else current.get("notes")),
+    }
+    values["document"] = cpf_digits or cnpj_digits
+    values["address"] = _compose_customer_address(values)
+    return values
+
+
+def _get_customer_missing_fiscal_fields(customer: dict[str, Any]) -> list[str]:
+    labels = [
+        ("name", "Nome completo" if customer.get("person_type") == "PF" else "Razao social"),
+        ("document", "CPF" if customer.get("person_type") == "PF" else "CNPJ"),
+        ("zip_code", "CEP"),
+        ("street", "Logradouro"),
+        ("number", "Numero"),
+        ("district", "Bairro"),
+        ("city", "Cidade"),
+        ("state", "UF"),
+        ("city_ibge_code", "Codigo IBGE"),
+        ("ie_indicator", "Indicador de IE"),
+    ]
+    missing = [label for field, label in labels if not _clean_text(customer.get(field))]
+    if customer.get("ie_indicator") == "Contribuinte" and not _clean_text(customer.get("state_registration")):
+        missing.append("Inscricao estadual")
+    return missing
+
+
+def _load_customer_for_nfe(connection: Any, customer_id: int) -> dict[str, Any]:
+    row = connection.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
+    if not row:
+        raise ServiceError("Cliente nao encontrado.", 404)
+    customer = _serialize_customer(row)
+    missing = _get_customer_missing_fiscal_fields(customer)
+    if missing:
+        raise ServiceError(
+            "Complete o cadastro do cliente antes de emitir a NF-e: " + ", ".join(missing) + ".",
+            409,
+        )
+    return customer
 
 
 def ensure_demo_user() -> None:
@@ -711,30 +1033,56 @@ def list_customers() -> list[dict[str, Any]]:
             """
             SELECT *
             FROM customers
-            ORDER BY LOWER(name)
+            ORDER BY LOWER(name), id DESC
             """
         ).fetchall()
-    return _rows_to_dicts(rows)
+    return [_serialize_customer(row) for row in rows]
 
 
 def create_customer(payload: dict[str, Any]) -> dict[str, Any]:
-    name = _require_text(payload.get("name"), "name")
     with get_connection() as connection:
-        cursor = connection.execute(
-            """
-            INSERT INTO customers (name, phone, document, address, notes, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                name,
-                _clean_text(payload.get("phone")),
-                _clean_text(payload.get("document")),
-                _clean_text(payload.get("address")),
-                _clean_text(payload.get("notes")),
-                iso_now(),
-            ),
-        )
-        customer_id = cursor.lastrowid
+        values = _build_customer_values(payload)
+        _ensure_customer_document_not_duplicated(connection, cpf=values["cpf"], cnpj=values["cnpj"])
+        try:
+            cursor = connection.execute(
+                """
+                INSERT INTO customers (
+                    person_type, name, trade_name, cpf, cnpj, phone, whatsapp, email, zip_code,
+                    street, number, complement, district, city, state, city_ibge_code,
+                    ie_indicator, state_registration, rg, birth_date, document, address, notes, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    values["person_type"],
+                    values["name"],
+                    values["trade_name"] or None,
+                    values["cpf"] or None,
+                    values["cnpj"] or None,
+                    values["phone"] or None,
+                    values["whatsapp"] or None,
+                    values["email"] or None,
+                    values["zip_code"],
+                    values["street"],
+                    values["number"],
+                    values["complement"] or None,
+                    values["district"],
+                    values["city"],
+                    values["state"],
+                    values["city_ibge_code"],
+                    values["ie_indicator"],
+                    values["state_registration"] or None,
+                    values["rg"] or None,
+                    values["birth_date"] or None,
+                    values["document"],
+                    values["address"],
+                    values["notes"] or None,
+                    iso_now(),
+                ),
+            )
+            customer_id = cursor.lastrowid
+        except UniqueViolation as exc:
+            raise ServiceError("Ja existe um cliente com esse CPF/CNPJ.", 409) from exc
     return get_customer(customer_id)
 
 
@@ -742,29 +1090,60 @@ def get_customer(customer_id: int) -> dict[str, Any]:
     with get_connection() as connection:
         row = connection.execute("SELECT * FROM customers WHERE id = ?", (customer_id,)).fetchone()
     if not row:
-        raise ServiceError("Cliente não encontrado.", 404)
-    return dict(row)
+        raise ServiceError("Cliente nao encontrado.", 404)
+    return _serialize_customer(row)
 
 
 def update_customer(customer_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     current = get_customer(customer_id)
     with get_connection() as connection:
-        connection.execute(
-            """
-            UPDATE customers
-            SET name = ?, phone = ?, document = ?, address = ?, notes = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (
-                _require_text(payload.get("name", current["name"]), "name"),
-                _clean_text(payload.get("phone") if payload.get("phone") is not None else current["phone"]),
-                _clean_text(payload.get("document") if payload.get("document") is not None else current["document"]),
-                _clean_text(payload.get("address") if payload.get("address") is not None else current["address"]),
-                _clean_text(payload.get("notes") if payload.get("notes") is not None else current["notes"]),
-                iso_now(),
-                customer_id,
-            ),
+        values = _build_customer_values(payload, current)
+        _ensure_customer_document_not_duplicated(
+            connection,
+            cpf=values["cpf"],
+            cnpj=values["cnpj"],
+            exclude_id=customer_id,
         )
+        try:
+            connection.execute(
+                """
+                UPDATE customers
+                SET person_type = ?, name = ?, trade_name = ?, cpf = ?, cnpj = ?, phone = ?, whatsapp = ?, email = ?,
+                    zip_code = ?, street = ?, number = ?, complement = ?, district = ?, city = ?, state = ?,
+                    city_ibge_code = ?, ie_indicator = ?, state_registration = ?, rg = ?, birth_date = ?, document = ?, address = ?,
+                    notes = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    values["person_type"],
+                    values["name"],
+                    values["trade_name"] or None,
+                    values["cpf"] or None,
+                    values["cnpj"] or None,
+                    values["phone"] or None,
+                    values["whatsapp"] or None,
+                    values["email"] or None,
+                    values["zip_code"],
+                    values["street"],
+                    values["number"],
+                    values["complement"] or None,
+                    values["district"],
+                    values["city"],
+                    values["state"],
+                    values["city_ibge_code"],
+                    values["ie_indicator"],
+                    values["state_registration"] or None,
+                    values["rg"] or None,
+                    values["birth_date"] or None,
+                    values["document"],
+                    values["address"],
+                    values["notes"] or None,
+                    iso_now(),
+                    customer_id,
+                ),
+            )
+        except UniqueViolation as exc:
+            raise ServiceError("Ja existe um cliente com esse CPF/CNPJ.", 409) from exc
     return get_customer(customer_id)
 
 
@@ -773,9 +1152,9 @@ def delete_customer(customer_id: int) -> None:
         with get_connection() as connection:
             deleted = connection.execute("DELETE FROM customers WHERE id = ?", (customer_id,)).rowcount
     except ForeignKeyViolation as exc:
-        raise ServiceError("Esse cliente já foi usado em vendas ou orçamentos e não pode ser excluído.", 409) from exc
+        raise ServiceError("Esse cliente ja foi usado em vendas ou orcamentos e nao pode ser excluido.", 409) from exc
     if not deleted:
-        raise ServiceError("Cliente não encontrado.", 404)
+        raise ServiceError("Cliente nao encontrado.", 404)
 
 
 def _prepare_quote_items(raw_items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], float]:
@@ -1567,8 +1946,23 @@ def get_check(check_id: int) -> dict[str, Any]:
     return _serialize_check(row)
 
 
+def _ensure_check_number_available(connection: Any, check_number: str, *, exclude_id: int | None = None) -> None:
+    if check_number == "S/N":
+        return
+
+    query = "SELECT id FROM checks WHERE check_number = ?"
+    params: list[Any] = [check_number]
+    if exclude_id is not None:
+        query += " AND id <> ?"
+        params.append(exclude_id)
+
+    existing = connection.execute(query, tuple(params)).fetchone()
+    if existing:
+        raise ServiceError("Já existe um cheque com esse número.")
+
+
 def create_check(payload: dict[str, Any]) -> dict[str, Any]:
-    check_number = _require_text(payload.get("check_number"), "check_number")
+    check_number = _normalize_check_number(payload.get("check_number"))
     beneficiary = _require_text(payload.get("beneficiary"), "beneficiary")
     amount = _parse_amount(payload.get("amount"), "amount", min_value=0.01, allow_zero=False)
     issue_date = ensure_date(payload.get("issue_date"))
@@ -1581,6 +1975,7 @@ def create_check(payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with get_connection() as connection:
+            _ensure_check_number_available(connection, check_number)
             cursor = connection.execute(
                 """
                 INSERT INTO checks (check_number, beneficiary, amount, issue_date, due_date, status, notes)
@@ -1604,6 +1999,7 @@ def create_check(payload: dict[str, Any]) -> dict[str, Any]:
 
 def update_check(check_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     current = get_check(check_id)
+    next_check_number = _normalize_check_number(payload.get("check_number", current["check_number"]))
     status = _require_text(payload.get("status", current["status"]), "status")
     if status not in CHECK_STATUSES:
         raise ServiceError("Escolha um status de cheque válido.")
@@ -1614,6 +2010,7 @@ def update_check(check_id: int, payload: dict[str, Any]) -> dict[str, Any]:
 
     try:
         with get_connection() as connection:
+            _ensure_check_number_available(connection, next_check_number, exclude_id=check_id)
             connection.execute(
                 """
                 UPDATE checks
@@ -1622,7 +2019,7 @@ def update_check(check_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 WHERE id = ?
                 """,
                 (
-                    _require_text(payload.get("check_number", current["check_number"]), "check_number"),
+                    next_check_number,
                     _require_text(payload.get("beneficiary", current["beneficiary"]), "beneficiary"),
                     _parse_amount(payload.get("amount", current["amount"]), "amount", min_value=0.01, allow_zero=False),
                     issue_date,
@@ -1633,7 +2030,7 @@ def update_check(check_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                 ),
             )
     except UniqueViolation as exc:
-        raise ServiceError("Já existe outro cheque com esse número.") from exc
+        raise ServiceError("Já existe um cheque com esse número.") from exc
     return get_check(check_id)
 
 
@@ -1757,8 +2154,16 @@ def get_fiscal_settings(settings_id: int | None = None) -> dict[str, Any]:
 
 def _validate_cnpj(value: str) -> str:
     digits = _clean_digits(value)
-    if digits and len(digits) != 14:
-        raise ServiceError("Informe um CNPJ válido com 14 dígitos.")
+    if len(digits) != 14 or digits == digits[0] * 14:
+        raise ServiceError("Informe um CNPJ valido com 14 digitos.")
+
+    weights = ((5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2), (6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2))
+    for index, sequence in enumerate(weights, start=12):
+        total = sum(int(digits[position]) * sequence[position] for position in range(index))
+        remainder = total % 11
+        expected = 0 if remainder < 2 else 11 - remainder
+        if expected != int(digits[index]):
+            raise ServiceError("Informe um CNPJ valido.")
     return digits
 
 
@@ -2070,8 +2475,20 @@ def validate_sale_for_nfe(sale_id: int) -> dict[str, Any]:
         issues.append("Selecione um cliente na venda para emitir NF-e.")
 
     customer = sale.get("customer") or {}
-    if sale.get("customer_id") and not _clean_text(customer.get("document")):
-        issues.append("O cliente selecionado precisa ter CPF/CNPJ para emissão.")
+    if sale.get("customer_id"):
+        try:
+            customer = get_customer(int(sale["customer_id"]))
+        except ServiceError as exc:
+            issues.append(exc.message)
+            customer = sale.get("customer") or {}
+        else:
+            missing_customer_fields = _get_customer_missing_fiscal_fields(customer)
+            if missing_customer_fields:
+                issues.append(
+                    "O cliente selecionado precisa completar os dados fiscais: "
+                    + ", ".join(missing_customer_fields)
+                    + "."
+                )
 
     if not sale.get("items"):
         issues.append("A venda precisa ter itens para emissão da NF-e.")
@@ -2160,6 +2577,8 @@ def emit_sale_nfe(sale_id: int) -> dict[str, Any]:
         latest_settings = connection.execute("SELECT * FROM fiscal_settings ORDER BY id ASC LIMIT 1").fetchone()
         if not latest_settings:
             raise ServiceError("Configurações fiscais não encontradas.", 404)
+        if sale.get("customer_id"):
+            sale_snapshot["customer"] = _load_customer_for_nfe(connection, int(sale["customer_id"]))
         nfe_id = _emit_nfe_document(
             connection,
             latest_settings=dict(latest_settings),
@@ -2172,7 +2591,7 @@ def emit_sale_nfe(sale_id: int) -> dict[str, Any]:
 
 
 def emit_manual_nfe(payload: dict[str, Any]) -> dict[str, Any]:
-    customer_name = _require_text(payload.get("customer_name"), "customer_name")
+    customer_id = _parse_int(payload.get("customer_id"), "customer_id", min_value=1)
     payment_method = _normalize_payment_method(payload.get("payment_method")) or "Dinheiro"
     if payment_method not in PAYMENT_METHODS:
         raise ServiceError("Escolha uma forma de pagamento válida para a NF-e.")
@@ -2190,18 +2609,14 @@ def emit_manual_nfe(payload: dict[str, Any]) -> dict[str, Any]:
             )
 
         items, total_amount = _prepare_manual_nfe_items(connection, payload.get("items") or [])
+        customer = _load_customer_for_nfe(connection, customer_id)
         sale_snapshot = {
             "sale_date": ensure_date(payload.get("sale_date"), today_iso()),
             "sale_time": _normalize_sale_time(payload.get("sale_time")),
             "payment_method": payment_method,
             "notes": _clean_text(payload.get("notes")),
-            "customer_name": customer_name,
-            "customer": {
-                "name": customer_name,
-                "document": _clean_text(payload.get("customer_document")),
-                "address": _clean_text(payload.get("customer_address")),
-                "phone": _clean_text(payload.get("customer_phone")),
-            },
+            "customer_name": customer["name"],
+            "customer": customer,
             "items": items,
             "total_amount": total_amount,
         }
@@ -2308,6 +2723,8 @@ def get_bootstrap_data() -> dict[str, Any]:
             "quote_statuses": QUOTE_STATUSES,
             "bill_statuses": BILL_STATUSES,
             "check_statuses": CHECK_STATUSES,
+            "customer_person_types": CUSTOMER_PERSON_TYPES,
+            "customer_ie_indicators": CUSTOMER_IE_INDICATORS,
             "stock_movement_types": STOCK_MOVEMENT_TYPES,
             "fiscal_environments": FISCAL_ENVIRONMENTS,
             "fiscal_provider_options": FISCAL_PROVIDER_OPTIONS,

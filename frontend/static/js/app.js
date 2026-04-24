@@ -60,6 +60,15 @@ const PRODUCT_ORIGIN_OPTIONS = [
   { value: "8", label: "8 - Nacional com conteúdo importado > 70%" },
 ];
 const PRODUCT_CSOSN_OPTIONS = ["101", "102", "103", "201", "202", "203", "300", "400", "500", "900"];
+const CUSTOMER_PERSON_TYPE_OPTIONS = [
+  { value: "PF", label: "Pessoa F\u00edsica" },
+  { value: "PJ", label: "Pessoa Jur\u00eddica" },
+];
+const CUSTOMER_IE_INDICATOR_OPTIONS = [
+  { value: "Nao contribuinte", label: "N\u00e3o contribuinte" },
+  { value: "Isento", label: "Isento" },
+  { value: "Contribuinte", label: "Contribuinte" },
+];
 
 const monthStart = (() => {
   const now = new Date();
@@ -128,6 +137,10 @@ const state = {
     expenses: null,
     bills: null,
     checks: null,
+  },
+  customersUi: {
+    activeTab: "main",
+    previewId: null,
   },
   formFeedback: {
     products: null,
@@ -953,6 +966,8 @@ function renderCurrentPage() {
   elements.pageContent.replaceChildren(template.content);
 
   syncMoneyInputs(elements.pageContent);
+  const customersForm = document.getElementById("customers-form");
+  if (customersForm) syncCustomerFormVisibility(customersForm);
   const quotesForm = document.getElementById("quotes-form");
   if (quotesForm) updateQuoteTotals(quotesForm);
   const salesForm = document.getElementById("sales-form");
@@ -1076,6 +1091,22 @@ function normalizePayload(rawPayload) {
 }
 
 
+function normalizeCheckNumberValue(value) {
+  const cleaned = String(value || "").trim();
+  const normalized = cleaned
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+
+  if (["sn", "semnumero"].includes(normalized)) {
+    return "S/N";
+  }
+
+  return cleaned;
+}
+
+
 function parseMoneyNumber(value) {
   if (value === null || value === undefined || value === "") return 0;
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
@@ -1192,6 +1223,276 @@ function isValidNumber(value, { min = 0, allowZero = true } = {}) {
 }
 
 
+function customerPersonTypeOptions() {
+  const configured = state.data.options.customer_person_types || [];
+  if (!configured.length) return CUSTOMER_PERSON_TYPE_OPTIONS;
+  return configured.map((value) => ({
+    value,
+    label: value === "PJ" ? "Pessoa Jur\u00eddica" : "Pessoa F\u00edsica",
+  }));
+}
+
+
+function customerIeIndicatorOptions() {
+  const configured = state.data.options.customer_ie_indicators || [];
+  if (!configured.length) return CUSTOMER_IE_INDICATOR_OPTIONS;
+  return configured.map((value) => ({
+    value,
+    label: value === "Nao contribuinte" ? "N\u00e3o contribuinte" : value,
+  }));
+}
+
+
+function normalizeCustomerPersonType(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+
+  if (["pj", "pessoajuridica", "juridica"].includes(normalized)) return "PJ";
+  return "PF";
+}
+
+
+function normalizeCustomerIeIndicator(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+
+  if (normalized === "contribuinte") return "Contribuinte";
+  if (normalized === "isento") return "Isento";
+  return "Nao contribuinte";
+}
+
+
+function digitsOnly(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+
+function formatCustomerDocument(value) {
+  const digits = digitsOnly(value);
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+  }
+  return String(value || "");
+}
+
+
+function formatZipCode(value) {
+  const digits = digitsOnly(value);
+  if (digits.length === 8) {
+    return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  }
+  return String(value || "");
+}
+
+
+function buildCustomerDisplayAddress(customer) {
+  const parts = [];
+  const addressLine = [customer.street, customer.number].filter(Boolean).join(", ");
+  const withComplement = [addressLine, customer.complement].filter(Boolean).join(", ");
+  const cityState = [customer.city, customer.state].filter(Boolean).join("/");
+
+  if (withComplement) parts.push(withComplement);
+  if (customer.district) parts.push(customer.district);
+  if (cityState) parts.push(cityState);
+  if (customer.zip_code) parts.push(`CEP ${formatZipCode(customer.zip_code)}`);
+  return parts.join(", ") || customer.address || "-";
+}
+
+
+function defaultCustomerDraft(editing = null) {
+  const fallbackType = editing?.person_type || (editing?.cnpj ? "PJ" : "PF");
+  const personType = normalizeCustomerPersonType(fallbackType);
+  const ieIndicator = normalizeCustomerIeIndicator(editing?.ie_indicator || "Nao contribuinte");
+  return {
+    id: editing?.id || "",
+    person_type: personType,
+    name: editing?.name || "",
+    trade_name: editing?.trade_name || "",
+    cpf: editing?.cpf || "",
+    cnpj: editing?.cnpj || "",
+    phone: editing?.phone || "",
+    whatsapp: editing?.whatsapp || "",
+    email: editing?.email || "",
+    zip_code: editing?.zip_code || "",
+    street: editing?.street || "",
+    number: editing?.number || "",
+    complement: editing?.complement || "",
+    district: editing?.district || "",
+    city: editing?.city || "",
+    state: editing?.state || "",
+    city_ibge_code: editing?.city_ibge_code || "",
+    ie_indicator: ieIndicator,
+    state_registration: editing?.state_registration || "",
+    rg: editing?.rg || "",
+    birth_date: editing?.birth_date || "",
+    notes: editing?.notes || "",
+  };
+}
+
+
+function validateCpf(value) {
+  const digits = digitsOnly(value);
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+
+  for (let index = 9; index < 11; index += 1) {
+    let total = 0;
+    for (let position = 0; position < index; position += 1) {
+      total += Number(digits[position]) * ((index + 1) - position);
+    }
+    let checkDigit = (total * 10) % 11;
+    if (checkDigit === 10) checkDigit = 0;
+    if (checkDigit !== Number(digits[index])) return false;
+  }
+  return true;
+}
+
+
+function validateCnpj(value) {
+  const digits = digitsOnly(value);
+  if (digits.length !== 14 || /^(\d)\1{13}$/.test(digits)) return false;
+
+  const weights = [
+    [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+    [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+  ];
+
+  return weights.every((sequence, index) => {
+    const size = 12 + index;
+    const total = sequence.reduce((sum, weight, position) => sum + (Number(digits[position]) * weight), 0);
+    const remainder = total % 11;
+    const expected = remainder < 2 ? 0 : 11 - remainder;
+    return expected === Number(digits[size]);
+  });
+}
+
+
+function normalizeCustomerPayload(payload) {
+  const personType = normalizeCustomerPersonType(payload.person_type);
+  const ieIndicator = normalizeCustomerIeIndicator(payload.ie_indicator);
+  const normalized = {
+    ...payload,
+    person_type: personType,
+    ie_indicator: ieIndicator,
+    cpf: digitsOnly(payload.cpf),
+    cnpj: digitsOnly(payload.cnpj),
+    zip_code: digitsOnly(payload.zip_code),
+    state: String(payload.state || "").trim().toUpperCase(),
+    city_ibge_code: digitsOnly(payload.city_ibge_code),
+    rg: String(payload.rg || "").trim(),
+    birth_date: String(payload.birth_date || "").trim(),
+  };
+
+  if (personType === "PF") {
+    normalized.cnpj = "";
+    normalized.trade_name = "";
+  } else {
+    normalized.cpf = "";
+    normalized.rg = "";
+    normalized.birth_date = "";
+  }
+
+  if (ieIndicator !== "Contribuinte") {
+    normalized.state_registration = "";
+  }
+
+  return normalized;
+}
+
+
+function syncCustomerFormVisibility(form) {
+  if (!(form instanceof HTMLFormElement)) return;
+
+  const typeField = form.querySelector('[name="person_type"]');
+  const ieField = form.querySelector('[name="ie_indicator"]');
+  const nameLabel = form.querySelector('[data-customer-name-label]');
+  const documentLabel = form.querySelector('[data-customer-document-label]');
+  const tradeNameField = form.querySelector('[data-customer-trade-name]');
+  const cpfField = form.querySelector('[data-customer-cpf-field]');
+  const cnpjField = form.querySelector('[data-customer-cnpj-field]');
+  const stateRegistrationField = form.querySelector('[data-customer-ie-field]');
+  const rgField = form.querySelector('[data-customer-rg-field]');
+  const birthDateField = form.querySelector('[data-customer-birth-date-field]');
+
+  const personType = normalizeCustomerPersonType(typeField?.value);
+  const ieIndicator = normalizeCustomerIeIndicator(ieField?.value);
+  const requiresIe = ieIndicator === "Contribuinte";
+
+  if (nameLabel) {
+    nameLabel.textContent = personType === "PJ" ? "Raz\u00e3o social" : "Nome completo";
+  }
+  if (documentLabel) {
+    documentLabel.textContent = personType === "PJ" ? "CNPJ" : "CPF";
+  }
+  if (tradeNameField) {
+    tradeNameField.classList.toggle("hidden", personType !== "PJ");
+  }
+  if (cpfField) {
+    cpfField.classList.toggle("hidden", personType !== "PF");
+    const input = cpfField.querySelector("input");
+    if (input) input.required = personType === "PF";
+  }
+  if (cnpjField) {
+    cnpjField.classList.toggle("hidden", personType !== "PJ");
+    const input = cnpjField.querySelector("input");
+    if (input) input.required = personType === "PJ";
+  }
+  if (stateRegistrationField) {
+    stateRegistrationField.classList.toggle("hidden", !requiresIe);
+    const input = stateRegistrationField.querySelector("input");
+    if (input) {
+      input.required = requiresIe;
+    }
+  }
+  if (rgField) {
+    rgField.classList.toggle("hidden", personType !== "PF");
+  }
+  if (birthDateField) {
+    birthDateField.classList.toggle("hidden", personType !== "PF");
+  }
+}
+
+
+async function hydrateCustomerAddressFromCep(form, cepValue) {
+  if (!(form instanceof HTMLFormElement)) return;
+  const cep = digitsOnly(cepValue);
+  if (cep.length !== 8) return;
+
+  try {
+    const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data.erro) return;
+
+    const streetField = form.querySelector('[name="street"]');
+    const districtField = form.querySelector('[name="district"]');
+    const cityField = form.querySelector('[name="city"]');
+    const stateField = form.querySelector('[name="state"]');
+    const complementField = form.querySelector('[name="complement"]');
+    const cityIbgeField = form.querySelector('[name="city_ibge_code"]');
+    const zipField = form.querySelector('[name="zip_code"]');
+
+    if (streetField && !streetField.value.trim()) streetField.value = data.logradouro || "";
+    if (districtField && !districtField.value.trim()) districtField.value = data.bairro || "";
+    if (cityField && !cityField.value.trim()) cityField.value = data.localidade || "";
+    if (stateField && !stateField.value.trim()) stateField.value = (data.uf || "").toUpperCase();
+    if (complementField && !complementField.value.trim()) complementField.value = data.complemento || "";
+    if (cityIbgeField && !cityIbgeField.value.trim()) cityIbgeField.value = data.ibge || "";
+    if (zipField) zipField.value = formatZipCode(data.cep || cep);
+  } catch {
+    // Mantém o preenchimento manual se a consulta falhar.
+  }
+}
+
+
 function validateSimplePayload(scope, payload) {
   if (scope === "products") {
     if (!payload.name || !(payload.sku || payload.code) || !payload.category || !payload.unit) {
@@ -1205,8 +1506,35 @@ function validateSimplePayload(scope, payload) {
     }
   }
 
-  if (scope === "customers" && !payload.name) {
-    throw new Error("Informe o nome do cliente.");
+  if (scope === "customers") {
+    const personType = normalizeCustomerPersonType(payload.person_type);
+    const ieIndicator = normalizeCustomerIeIndicator(payload.ie_indicator);
+    const documentDigits = personType === "PJ" ? digitsOnly(payload.cnpj) : digitsOnly(payload.cpf);
+
+    if (!payload.name) {
+      throw new Error(personType === "PJ" ? "Informe a razão social do cliente." : "Informe o nome completo do cliente.");
+    }
+    if (personType === "PF" && !validateCpf(documentDigits)) {
+      throw new Error("Informe um CPF válido para o cliente.");
+    }
+    if (personType === "PJ" && !validateCnpj(documentDigits)) {
+      throw new Error("Informe um CNPJ válido para o cliente.");
+    }
+    if (digitsOnly(payload.zip_code).length !== 8) {
+      throw new Error("Informe um CEP válido com 8 dígitos.");
+    }
+    if (!payload.street || !payload.number || !payload.district || !payload.city) {
+      throw new Error("Preencha logradouro, número, bairro e cidade do cliente.");
+    }
+    if (!/^[A-Za-z]{2}$/.test(String(payload.state || "").trim())) {
+      throw new Error("Informe uma UF válida com 2 letras.");
+    }
+    if (digitsOnly(payload.city_ibge_code).length !== 7) {
+      throw new Error("Informe o código IBGE do município com 7 dígitos.");
+    }
+    if (ieIndicator === "Contribuinte" && !String(payload.state_registration || "").trim()) {
+      throw new Error("Informe a inscrição estadual do cliente contribuinte.");
+    }
   }
 
   if (scope === "expenses") {
@@ -2848,7 +3176,127 @@ function renderNfeIssuedResults() {
 
 
 function getFilteredCustomers() {
-  return getSimpleSearchRecords(state.data.customers, ["name", "phone", "document", "address", "notes"], state.filters.customers.search);
+  return getSimpleSearchRecords(
+    state.data.customers,
+    [
+      "name",
+      "trade_name",
+      "phone",
+      "whatsapp",
+      "email",
+      "document",
+      "document_formatted",
+      "cpf",
+      "cnpj",
+      "zip_code",
+      "street",
+      "district",
+      "city",
+      "state",
+      "city_ibge_code",
+      "state_registration",
+      "rg",
+      "notes",
+    ],
+    state.filters.customers.search,
+  );
+}
+
+
+function getCustomerPreviewRecord() {
+  const previewId = String(state.customersUi.previewId || "").trim();
+  if (!previewId) return null;
+  return state.data.customers.find((customer) => String(customer.id) === previewId) || null;
+}
+
+
+function renderCustomerActionIcon(name) {
+  const icons = {
+    view: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+        <circle cx="12" cy="12" r="3.25"></circle>
+      </svg>
+    `,
+    edit: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 20h4l10-10-4-4L4 16v4Z"></path>
+        <path d="M13 7l4 4"></path>
+      </svg>
+    `,
+    delete: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16"></path>
+        <path d="M9 3h6l1 2H8l1-2Z"></path>
+        <path d="M7 7l1 13h8l1-13"></path>
+        <path d="M10 11v5"></path>
+        <path d="M14 11v5"></path>
+      </svg>
+    `,
+  };
+  return icons[name] || "";
+}
+
+
+function renderCustomerListActions(customer) {
+  return `
+    <div class="table-actions customer-table-actions">
+      <button type="button" class="table-action icon-only" data-action="view-customer" data-id="${customer.id}" title="Ver cliente" aria-label="Ver cliente">
+        ${renderCustomerActionIcon("view")}
+      </button>
+      <button type="button" class="table-action icon-only" data-action="edit-customer" data-id="${customer.id}" title="Editar cliente" aria-label="Editar cliente">
+        ${renderCustomerActionIcon("edit")}
+      </button>
+      <button type="button" class="table-action icon-only danger" data-action="delete-customer" data-id="${customer.id}" title="Excluir cliente" aria-label="Excluir cliente">
+        ${renderCustomerActionIcon("delete")}
+      </button>
+    </div>
+  `;
+}
+
+
+function renderCustomerPreviewCard(customer) {
+  if (!customer) return "";
+
+  const identityLabel = customer.person_type === "PJ" ? "Pessoa Jurídica" : "Pessoa Física";
+  const contacts = [customer.phone, customer.whatsapp, customer.email].filter(Boolean).join(" • ");
+  const summaryItems = [
+    { label: "Documento", value: customer.document_formatted || "-" },
+    { label: "Tipo", value: identityLabel },
+    { label: "Cidade", value: customer.city_label || "-" },
+    { label: "IE", value: customer.state_registration || (customer.ie_indicator === "Contribuinte" ? "-" : customer.ie_indicator) || "-" },
+  ];
+
+  return `
+    <section class="customer-preview-card">
+      <div class="customer-preview-header">
+        <div>
+          <span class="eyebrow">Visualização rápida</span>
+          <h4>${escapeHtml(customer.name || "Cliente")}</h4>
+          <p>${escapeHtml(customer.trade_name || identityLabel)}</p>
+        </div>
+        <button type="button" class="table-action icon-only" data-action="close-customer-preview" aria-label="Fechar visualização" title="Fechar visualização">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12"></path><path d="m18 6-12 12"></path></svg>
+        </button>
+      </div>
+      <div class="customer-preview-grid">
+        ${summaryItems.map((item) => `
+          <article class="customer-preview-stat">
+            <span>${escapeHtml(item.label)}</span>
+            <strong>${escapeHtml(item.value)}</strong>
+          </article>
+        `).join("")}
+      </div>
+      <div class="customer-preview-details">
+        <p><strong>Endereço:</strong> ${escapeHtml(buildCustomerDisplayAddress(customer))}</p>
+        <p><strong>Contato:</strong> ${escapeHtml(contacts || "Não informado")}</p>
+        ${customer.person_type === "PF" && (customer.rg || customer.birth_date) ? `
+          <p><strong>Dados adicionais:</strong> ${escapeHtml([customer.rg ? `RG ${customer.rg}` : "", customer.birth_date ? `Nascimento ${formatDate(customer.birth_date)}` : ""].filter(Boolean).join(" • "))}</p>
+        ` : ""}
+        ${customer.notes ? `<p><strong>Observações:</strong> ${escapeHtml(customer.notes)}</p>` : ""}
+      </div>
+    </section>
+  `;
 }
 
 
@@ -2856,15 +3304,15 @@ function renderCustomersListResults() {
   const customers = getFilteredCustomers();
 
   return customers.length ? `
-    <div class="table-wrapper">
-      <table class="data-table">
+    <div class="table-wrapper customers-list-table-wrapper">
+      <table class="data-table customers-data-table">
         <thead>
           <tr>
-            <th>Cliente</th>
-            <th>Telefone</th>
-            <th>CPF/CNPJ</th>
-            <th>Endereço</th>
-            <th></th>
+            <th>Nome</th>
+            <th>Tipo</th>
+            <th>CPF / CNPJ</th>
+            <th>Cidade</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -2872,12 +3320,20 @@ function renderCustomersListResults() {
             <tr>
               <td>
                 <strong>${escapeHtml(customer.name)}</strong>
-                <small>${escapeHtml(customer.notes || "Sem observações")}</small>
+                <small>${escapeHtml(customer.phone || customer.whatsapp || customer.email || (customer.trade_name || "Sem contato adicional"))}</small>
               </td>
-              <td>${escapeHtml(customer.phone || "-")}</td>
-              <td>${escapeHtml(customer.document || "-")}</td>
-              <td>${escapeHtml(customer.address || "-")}</td>
-              <td>${renderTableActions("customer", customer.id)}</td>
+              <td>
+                ${renderBadge(customer.person_type === "PJ" ? "Pessoa Jurídica" : "Pessoa Física", customer.person_type === "PJ" ? "success" : "brand")}
+              </td>
+              <td>
+                <strong>${escapeHtml(customer.document_formatted || "-")}</strong>
+                <small>${escapeHtml(customer.ie_indicator === "Nao contribuinte" ? "Não contribuinte" : customer.ie_indicator || "Sem indicador")}</small>
+              </td>
+              <td>
+                <strong>${escapeHtml(customer.city_label || "-")}</strong>
+                <small>${escapeHtml(customer.state_registration || customer.city_ibge_code || "Sem complemento fiscal")}</small>
+              </td>
+              <td>${renderCustomerListActions(customer)}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -4491,55 +4947,176 @@ function renderNfePage() {
 
 function renderCustomersPage() {
   const search = state.filters.customers.search;
-  const editing = state.editing.customers;
+  const editing = defaultCustomerDraft(state.editing.customers);
+  const totals = {
+    total: state.data.customers.length,
+    individuals: state.data.customers.filter((customer) => customer.person_type !== "PJ").length,
+    companies: state.data.customers.filter((customer) => customer.person_type === "PJ").length,
+    contributors: state.data.customers.filter((customer) => customer.ie_indicator === "Contribuinte").length,
+  };
 
   return `
     ${renderHero(
       "Cadastro de clientes",
-      "Mantenha o histórico da sua base de clientes sempre atualizado para vender com mais controle.",
+      "Cadastre clientes com dados fiscais completos para selecionar direto na emiss\u00e3o da NF-e, sem digita\u00e7\u00e3o manual.",
     )}
 
-    <section class="metrics-grid metrics-grid-3">
-      ${renderMetricCard({ label: "Clientes cadastrados", value: formatNumber(state.data.customers.length), helper: "Base da loja" })}
-      ${renderMetricCard({ label: "Com telefone", value: formatNumber(state.data.customers.filter((customer) => customer.phone).length), helper: "Facilita o contato" })}
-      ${renderMetricCard({ label: "Com CPF/CNPJ", value: formatNumber(state.data.customers.filter((customer) => customer.document).length), helper: "Cadastro mais completo" })}
+    <section class="metrics-grid metrics-grid-4">
+      ${renderMetricCard({ label: "Clientes cadastrados", value: formatNumber(totals.total), helper: "Base pronta para NF-e" })}
+      ${renderMetricCard({ label: "Pessoa f\u00edsica", value: formatNumber(totals.individuals), helper: "Clientes com CPF" })}
+      ${renderMetricCard({ label: "Pessoa jur\u00eddica", value: formatNumber(totals.companies), helper: "Clientes com CNPJ" })}
+      ${renderMetricCard({ label: "Contribuintes", value: formatNumber(totals.contributors), helper: "Com IE obrigat\u00f3ria" })}
     </section>
 
     <section class="page-grid page-grid-2">
-      <article class="panel">
+      <article class="panel customer-form-panel">
         <div class="section-header">
           <div>
-            <h3>${editing ? "Editar cliente" : "Novo cliente"}</h3>
-            <p>${editing ? "Atualize os dados do cliente selecionado." : "Cadastre clientes para usar em vendas e orçamentos."}</p>
+            <h3>${editing.id ? "Editar cliente" : "Novo cliente"}</h3>
+            <p>${editing.id ? "Atualize os dados fiscais do cliente selecionado." : "Cadastre clientes para selecionar diretamente na emiss\u00e3o da NF-e."}</p>
           </div>
         </div>
-        <form id="customers-form" class="form-grid">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
+        <form id="customers-form" class="form-grid customer-form-grid">
+          <input type="hidden" name="id" value="${editing.id}">
           ${renderFormFeedback("customers")}
-          <label><span>Nome</span><input type="text" name="name" value="${escapeHtml(toFormValue(editing?.name))}" required></label>
-          <label><span>Telefone</span><input type="text" name="phone" value="${escapeHtml(toFormValue(editing?.phone))}"></label>
-          <label><span>CPF/CNPJ</span><input type="text" name="document" value="${escapeHtml(toFormValue(editing?.document))}"></label>
-          <label><span>Endereço</span><input type="text" name="address" value="${escapeHtml(toFormValue(editing?.address))}"></label>
-          <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="4">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
+
+          <div class="field-span-2 customer-form-section">
+            <div class="section-header compact">
+              <div>
+                <h4>Tipo de cliente</h4>
+                <p>Escolha a estrutura fiscal correta antes de preencher os dados.</p>
+              </div>
+            </div>
+            <div class="customer-type-switcher">
+              ${customerPersonTypeOptions().map((option) => `
+                <label class="customer-type-option">
+                  <input type="radio" name="person_type" value="${option.value}" ${editing.person_type === option.value ? "checked" : ""}>
+                  <span>${option.label}</span>
+                </label>
+              `).join("")}
+            </div>
+          </div>
+
+          <div class="field-span-2 customer-form-section">
+            <div class="section-header compact">
+              <div>
+                <h4>Dados principais</h4>
+                <p>Esses dados s\u00e3o usados no cadastro e na identifica\u00e7\u00e3o do destinat\u00e1rio da NF-e.</p>
+              </div>
+            </div>
+            <div class="customer-form-section-grid">
+              <label class="field-span-2">
+                <span data-customer-name-label>${editing.person_type === "PJ" ? "Razão social" : "Nome completo"}</span>
+                <input type="text" name="name" value="${escapeHtml(toFormValue(editing.name))}" placeholder="${editing.person_type === "PJ" ? "Ex.: Dois Irmãos Comércio Ltda" : "Ex.: João da Silva"}" required>
+              </label>
+              <label class="field-span-2 ${editing.person_type === "PJ" ? "" : "hidden"}" data-customer-trade-name>
+                <span>Nome fantasia</span>
+                <input type="text" name="trade_name" value="${escapeHtml(toFormValue(editing.trade_name))}" placeholder="Opcional">
+              </label>
+              <label class="${editing.person_type === "PF" ? "" : "hidden"}" data-customer-cpf-field>
+                <span data-customer-document-label>CPF</span>
+                <input type="text" name="cpf" value="${escapeHtml(toFormValue(editing.cpf))}" inputmode="numeric" placeholder="Somente números">
+              </label>
+              <label class="${editing.person_type === "PJ" ? "" : "hidden"}" data-customer-cnpj-field>
+                <span data-customer-document-label>CNPJ</span>
+                <input type="text" name="cnpj" value="${escapeHtml(toFormValue(editing.cnpj))}" inputmode="numeric" placeholder="Somente números">
+              </label>
+              <label>
+                <span>Telefone</span>
+                <input type="text" name="phone" value="${escapeHtml(toFormValue(editing.phone))}" placeholder="Opcional">
+              </label>
+              <label>
+                <span>E-mail</span>
+                <input type="email" name="email" value="${escapeHtml(toFormValue(editing.email))}" placeholder="Opcional">
+              </label>
+            </div>
+          </div>
+
+          <div class="field-span-2 customer-form-section">
+            <div class="section-header compact">
+              <div>
+                <h4>Endereço fiscal</h4>
+                <p>Ao informar o CEP, o sistema tenta preencher o endereço automaticamente.</p>
+              </div>
+            </div>
+            <div class="customer-form-section-grid">
+              <label>
+                <span>CEP</span>
+                <input type="text" name="zip_code" value="${escapeHtml(formatZipCode(editing.zip_code))}" inputmode="numeric" placeholder="00000-000">
+              </label>
+              <label class="field-span-2">
+                <span>Logradouro</span>
+                <input type="text" name="street" value="${escapeHtml(toFormValue(editing.street))}" placeholder="Rua, avenida, estrada" required>
+              </label>
+              <label>
+                <span>Número</span>
+                <input type="text" name="number" value="${escapeHtml(toFormValue(editing.number))}" placeholder="Ex.: 120" required>
+              </label>
+              <label>
+                <span>Complemento</span>
+                <input type="text" name="complement" value="${escapeHtml(toFormValue(editing.complement))}" placeholder="Opcional">
+              </label>
+              <label>
+                <span>Bairro</span>
+                <input type="text" name="district" value="${escapeHtml(toFormValue(editing.district))}" required>
+              </label>
+              <label>
+                <span>Cidade</span>
+                <input type="text" name="city" value="${escapeHtml(toFormValue(editing.city))}" required>
+              </label>
+              <label>
+                <span>UF</span>
+                <input type="text" name="state" value="${escapeHtml(toFormValue(editing.state))}" maxlength="2" placeholder="UF" required>
+              </label>
+              <label>
+                <span>Código IBGE do município</span>
+                <input type="text" name="city_ibge_code" value="${escapeHtml(toFormValue(editing.city_ibge_code))}" inputmode="numeric" placeholder="7 dígitos" required>
+              </label>
+            </div>
+          </div>
+
+          <div class="field-span-2 customer-form-section">
+            <div class="section-header compact">
+              <div>
+                <h4>Inscrição estadual</h4>
+                <p>Preencha o indicador fiscal conforme o cadastro do destinatário.</p>
+              </div>
+            </div>
+            <div class="customer-form-section-grid">
+              <label>
+                <span>Indicador de IE</span>
+                <select name="ie_indicator">
+                  ${customerIeIndicatorOptions().map((option) => `
+                    <option value="${option.value}" ${editing.ie_indicator === option.value ? "selected" : ""}>${option.label}</option>
+                  `).join("")}
+                </select>
+              </label>
+              <label class="${editing.ie_indicator === "Contribuinte" ? "" : "hidden"}" data-customer-ie-field>
+                <span>Inscrição estadual</span>
+                <input type="text" name="state_registration" value="${escapeHtml(toFormValue(editing.state_registration))}" placeholder="Obrigatória para contribuinte">
+              </label>
+            </div>
+          </div>
+
           <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar alterações" : "Cadastrar cliente"}</button>
+            <button type="submit" class="btn btn-primary">${editing.id ? "Salvar alterações" : "Cadastrar cliente"}</button>
             <button type="button" class="btn btn-secondary" data-action="clear-customers-form">Limpar formulário</button>
           </div>
         </form>
       </article>
 
-      <article class="panel">
+      <article class="panel customer-list-panel">
         <div class="section-header">
           <div>
             <h3>Lista de clientes</h3>
-            <p>Busque por nome, telefone ou documento.</p>
+            <p>Busque por nome, CPF/CNPJ, cidade, IE ou código IBGE.</p>
           </div>
         </div>
         <section class="panel toolbar-panel" data-filter-scope="customers">
           <div class="toolbar-row">
             <label class="toolbar-field toolbar-search">
               <span>Busca</span>
-              <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: Ana, CNPJ, telefone">
+              <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Ex.: João, CNPJ, CEP, cidade, IE">
             </label>
           </div>
         </section>
@@ -5998,6 +6575,24 @@ function handlePageChange(event) {
   }
 
   const form = target.closest("form");
+  if (form?.getAttribute("id") === "customers-form") {
+    const fieldName = target.getAttribute("name") || "";
+    if (fieldName === "person_type" || fieldName === "ie_indicator") {
+      syncCustomerFormVisibility(form);
+    }
+    if (fieldName === "zip_code") {
+      target.value = formatZipCode(target.value);
+      void hydrateCustomerAddressFromCep(form, target.value);
+    }
+    if (fieldName === "state") {
+      target.value = String(target.value || "").toUpperCase().slice(0, 2);
+    }
+  }
+
+  if (form?.getAttribute("id") === "checks-form" && target.getAttribute("name") === "check_number") {
+    target.value = normalizeCheckNumberValue(target.value);
+  }
+
   if (form?.getAttribute("id") === "products-form") {
     const fieldName = target.getAttribute("name") || "";
     if (fieldName === "margin_percent") {
@@ -6076,6 +6671,19 @@ function handlePageInput(event) {
   }
 
   const form = target.closest("form");
+  if (form?.getAttribute("id") === "customers-form") {
+    const fieldName = target.getAttribute("name") || "";
+    if (fieldName === "cpf" || fieldName === "cnpj" || fieldName === "city_ibge_code") {
+      target.value = digitsOnly(target.value);
+    }
+    if (fieldName === "zip_code") {
+      target.value = formatZipCode(target.value);
+    }
+    if (fieldName === "state") {
+      target.value = String(target.value || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
+    }
+  }
+
   if (form?.getAttribute("id") === "products-form") {
     const fieldName = target.getAttribute("name") || "";
     if (fieldName === "margin_percent") {
@@ -6204,6 +6812,16 @@ async function submitSimpleForm(form, scope) {
   delete payload.id;
   if (scope === "products") {
     delete payload.margin_percent;
+  }
+  if (scope === "customers") {
+    Object.assign(payload, normalizeCustomerPayload(payload));
+  }
+  if (scope === "checks") {
+    payload.check_number = normalizeCheckNumberValue(payload.check_number);
+    const checkNumberField = form.querySelector('[name="check_number"]');
+    if (checkNumberField instanceof HTMLInputElement) {
+      checkNumberField.value = payload.check_number || "";
+    }
   }
 
   try {
