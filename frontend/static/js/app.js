@@ -348,7 +348,7 @@ const state = {
     stock: { search: "", stock_filter: "" },
     customers: { search: "" },
     sales: {
-      preset: "month",
+      preset: "today",
       day: todayIso(),
       start: monthStart,
       end: todayIso(),
