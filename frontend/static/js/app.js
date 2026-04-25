@@ -269,6 +269,7 @@ const state = {
   nfe: {
     selectedSaleId: "",
     validation: null,
+    fiscalEditorOpen: false,
   },
   topAlert: null,
   data: {
@@ -487,6 +488,7 @@ function showLogin() {
   state.notifications.open = false;
   state.nfe.validation = null;
   state.nfe.selectedSaleId = "";
+  state.nfe.fiscalEditorOpen = false;
   state.topAlert = null;
   renderNotifications();
   renderTopAlert();
@@ -1325,6 +1327,7 @@ async function handleLogout() {
     state.profileMenu.shortcutsOpen = false;
     state.nfe.validation = null;
     state.nfe.selectedSaleId = "";
+    state.nfe.fiscalEditorOpen = false;
     state.topAlert = null;
     showLogin();
     showToast("Sessão encerrada.", "info");
@@ -3572,6 +3575,284 @@ function getFilteredIssuedRecords() {
 }
 
 
+function formatNfeEnvironmentLabel(value) {
+  return value === "production" ? "Produção" : "Homologação";
+}
+
+
+function formatNfeStatusLabel(status) {
+  const normalized = String(status || "").trim();
+  if (!normalized) return "Pendente";
+  if (normalized.toUpperCase() === "AUTORIZADA") return "Autorizada";
+  return normalized
+    .toLowerCase()
+    .split(/\s+/)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+
+function nfeStatusTone(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("autoriz")) return "success";
+  if (normalized.includes("rejeit") || normalized.includes("cancel")) return "danger";
+  if (normalized.includes("pend") || normalized.includes("process")) return "warning";
+  return statusTone(status);
+}
+
+
+function formatNfePhone(value) {
+  const digits = digitsOnly(value);
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+  return String(value || "");
+}
+
+
+function buildNfeFiscalAddress(settings) {
+  return [settings.street, settings.number].filter(Boolean).join(", ") || "-";
+}
+
+
+function buildNfeFiscalCityState(settings) {
+  return [settings.city, settings.state].filter(Boolean).join(" / ") || "-";
+}
+
+
+function isNfeFiscalProfileReady(settings) {
+  return Boolean(
+    settings.company_name
+    && settings.trade_name
+    && digitsOnly(settings.cnpj).length === 14
+    && settings.state_registration
+    && settings.city
+    && settings.state,
+  );
+}
+
+
+function renderNfeDashboardIcon(name) {
+  const icons = {
+    home: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 10.5 12 4l7.5 6.5"></path>
+        <path d="M6.5 9.5v9h11v-9"></path>
+        <path d="M10 18.5v-5h4v5"></path>
+      </svg>
+    `,
+    chevron: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m10 8 4 4-4 4"></path>
+      </svg>
+    `,
+    "file-check": `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h7l4.5 4.5V19A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"></path>
+        <path d="M14 3.5V8h4.5"></path>
+        <path d="m9.5 14.2 1.8 1.8 3.6-4.1"></path>
+      </svg>
+    `,
+    receipt: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h10v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4V3.5z"></path>
+        <path d="M9.5 8h5"></path>
+        <path d="M9.5 11.5h5"></path>
+        <path d="M9.5 15h3.5"></path>
+      </svg>
+    `,
+    "shield-check": `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.5 18.5 6v5.5c0 4.1-2.5 6.9-6.5 9-4-2.1-6.5-4.9-6.5-9V6z"></path>
+        <path d="m9.5 12.5 1.8 1.8 3.8-4.1"></path>
+      </svg>
+    `,
+    sparkle: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2z"></path>
+        <path d="m18 13 .7 2.2L21 16l-2.3.8L18 19l-.7-2.2L15 16l2.3-.8z"></path>
+      </svg>
+    `,
+    hash: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 4.5 7 19.5"></path>
+        <path d="M17 4.5 15 19.5"></path>
+        <path d="M4.5 9h15"></path>
+        <path d="M3.5 15h15"></path>
+      </svg>
+    `,
+    building: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 20.5h15"></path>
+        <path d="M6.5 20.5V6.5l5.5-2v16"></path>
+        <path d="M12 8.5h5.5v12"></path>
+        <path d="M8.5 9.5h1"></path>
+        <path d="M8.5 12.5h1"></path>
+        <path d="M14.5 11.5h1"></path>
+        <path d="M14.5 14.5h1"></path>
+      </svg>
+    `,
+    store: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 8.5 6 4.5h12l1.5 4v2a2 2 0 0 1-2 2 2.1 2.1 0 0 1-1.9-1.2 2.1 2.1 0 0 1-1.9 1.2 2.1 2.1 0 0 1-1.8-1 2.1 2.1 0 0 1-1.8 1 2.1 2.1 0 0 1-1.9-1.2 2 2 0 0 1-2 1.2 2 2 0 0 1-2-2z"></path>
+        <path d="M6.5 12.5v7h11v-7"></path>
+      </svg>
+    `,
+    badge: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="4.5" width="15" height="15" rx="3"></rect>
+        <path d="M8 9h8"></path>
+        <path d="M8 13h8"></path>
+        <path d="M8 17h4"></path>
+      </svg>
+    `,
+    landmark: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3.5 20.5h17"></path>
+        <path d="M5.5 17.5V10"></path>
+        <path d="M9.5 17.5V10"></path>
+        <path d="M14.5 17.5V10"></path>
+        <path d="M18.5 17.5V10"></path>
+        <path d="M3.5 9.5 12 4l8.5 5.5z"></path>
+      </svg>
+    `,
+    pin: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 20s5.5-5.7 5.5-10A5.5 5.5 0 1 0 6.5 10C6.5 14.3 12 20 12 20Z"></path>
+        <circle cx="12" cy="10" r="2.3"></circle>
+      </svg>
+    `,
+    homepin: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 10.5 12 4l7.5 6.5"></path>
+        <path d="M6.5 9.5v9h11v-9"></path>
+        <path d="M12 18.5v-4"></path>
+      </svg>
+    `,
+    map: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M9 4.5 15 3l5 1.5v15L15 18l-6 1.5-5-1.5v-15z"></path>
+        <path d="M9 4.5v15"></path>
+        <path d="M15 3v15"></path>
+      </svg>
+    `,
+    phone: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 4.5h3l1.2 3.7-1.8 1.6a14.5 14.5 0 0 0 5.3 5.3l1.6-1.8 3.7 1.2v3a1.5 1.5 0 0 1-1.6 1.5A15.4 15.4 0 0 1 5 6.1a1.5 1.5 0 0 1 1.5-1.6z"></path>
+      </svg>
+    `,
+    pencil: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 20h4l10-10-4-4L4 16v4Z"></path>
+        <path d="M13 7l4 4"></path>
+      </svg>
+    `,
+    arrow: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 12h14"></path>
+        <path d="m13 7 5 5-5 5"></path>
+      </svg>
+    `,
+    download: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4.5v10"></path>
+        <path d="m8 11.5 4 4 4-4"></path>
+        <path d="M5 19.5h14"></path>
+      </svg>
+    `,
+    rocket: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13.5 4.5c3.1 0 5.5 2.4 5.5 5.5 0 4.5-4.5 8.5-10.5 9.5.9-6 5-10.5 9.5-10.5z"></path>
+        <path d="M8.5 15.5 6 18l-1.5-4.5L7 11"></path>
+        <path d="M13.5 10.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"></path>
+      </svg>
+    `,
+    history: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3.5 12a8.5 8.5 0 1 0 2.2-5.7"></path>
+        <path d="M3.5 5.5v4h4"></path>
+        <path d="M12 7.5v5l3 1.8"></path>
+      </svg>
+    `,
+  };
+
+  return icons[name] || icons.badge;
+}
+
+
+function renderNfeHeroStat({ icon, label, value, helper, tone = "neutral" }) {
+  return `
+    <article class="nfe-hero-stat nfe-hero-stat-${tone}">
+      <span class="nfe-hero-stat-icon" aria-hidden="true">${renderNfeDashboardIcon(icon)}</span>
+      <div class="nfe-hero-stat-copy">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(String(value))}</strong>
+        <small>${escapeHtml(helper)}</small>
+      </div>
+    </article>
+  `;
+}
+
+
+function renderNfeSettingsSummaryItem({ icon, label, value, wide = false }) {
+  return `
+    <article class="nfe-settings-summary-item ${wide ? "is-wide" : ""}">
+      <span class="nfe-settings-summary-icon" aria-hidden="true">${renderNfeDashboardIcon(icon)}</span>
+      <div class="nfe-settings-summary-copy">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value || "-")}</strong>
+      </div>
+    </article>
+  `;
+}
+
+
+function renderNfeFlowStep({ step, icon, title, description, action = "" }) {
+  const tagName = action ? "button" : "article";
+  const actionAttrs = action ? ` type="button" data-action="${action}"` : "";
+  return `
+    <${tagName} class="nfe-flow-dashboard-step ${action ? "is-interactive" : ""}"${actionAttrs}>
+      <div class="nfe-flow-dashboard-step-start">
+        <span class="nfe-flow-dashboard-step-icon" aria-hidden="true">${renderNfeDashboardIcon(icon)}</span>
+        <span class="nfe-flow-dashboard-step-number">${escapeHtml(String(step))}</span>
+      </div>
+      <div class="nfe-flow-dashboard-step-copy">
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      <span class="nfe-flow-dashboard-step-arrow" aria-hidden="true">${renderNfeDashboardIcon("arrow")}</span>
+    </${tagName}>
+  `;
+}
+
+
+function renderNfeQuickAccessRow(record) {
+  return `
+    <article class="nfe-quick-access-row">
+      <div class="nfe-quick-access-main">
+        <strong>NF-e #${escapeHtml(String(record.number_nfe || "-"))}</strong>
+        <small>${escapeHtml([record.customer_name || "Cliente não informado", record.payment_method || "-"].filter(Boolean).join(" • "))}</small>
+      </div>
+      <div class="nfe-quick-access-status">${renderBadge(formatNfeStatusLabel(record.status_nfe), nfeStatusTone(record.status_nfe))}</div>
+      <div class="nfe-quick-access-total">${formatMoney(record.total_amount)}</div>
+      <button
+        type="button"
+        class="nfe-quick-access-download"
+        data-action="download-nfe-pdf"
+        data-id="${record.id}"
+        aria-label="Baixar DANFE da NF-e ${escapeHtml(String(record.number_nfe || "-"))}"
+        title="Baixar DANFE"
+      >
+        ${renderNfeDashboardIcon("download")}
+      </button>
+    </article>
+  `;
+}
+
+
 function renderNfeIssuedResults() {
   const filteredIssued = getFilteredIssuedRecords();
 
@@ -3597,8 +3878,8 @@ function renderNfeIssuedResults() {
               <td>${escapeHtml(String(record.series_nfe))}</td>
               <td>${renderBadge(record.source_type === "manual" ? "Manual" : "Venda", record.source_type === "manual" ? "brand" : "neutral")}</td>
               <td>${escapeHtml(record.customer_name || "-")}</td>
-              <td>${renderBadge(record.status_nfe, statusTone(record.status_nfe))}</td>
-              <td>${escapeHtml(record.authorization_date ? record.authorization_date.slice(0, 10) : "-")}</td>
+              <td>${renderBadge(formatNfeStatusLabel(record.status_nfe), nfeStatusTone(record.status_nfe))}</td>
+              <td>${escapeHtml(record.authorization_date ? formatDate(record.authorization_date.slice(0, 10)) : "-")}</td>
               <td>${formatMoney(record.total_amount)}</td>
               <td>
                 <div class="table-actions">
@@ -5245,141 +5526,240 @@ function renderNfePage() {
   const issued = state.data.nfe_issued || [];
   const authorizedCount = issued.filter((item) => item.status_nfe === "AUTORIZADA").length;
   const manualCount = issued.filter((item) => item.source_type === "manual").length;
-  const recentIssued = issued.slice(0, 3);
+  const recentIssued = issued.slice(0, 5);
+  const fiscalReady = isNfeFiscalProfileReady(settings);
+  const settingsSummary = [
+    { icon: "building", label: "Razão social", value: settings.company_name || "Não informado", wide: true },
+    { icon: "store", label: "Nome fantasia", value: settings.trade_name || "Não informado" },
+    { icon: "badge", label: "CNPJ", value: formatCustomerDocument(settings.cnpj) || "Não informado" },
+    { icon: "landmark", label: "Inscrição estadual", value: settings.state_registration || "Não informado" },
+    { icon: "receipt", label: "Regime tributário", value: settings.tax_regime || "Não informado" },
+    { icon: "pin", label: "Endereço", value: buildNfeFiscalAddress(settings), wide: true },
+    { icon: "homepin", label: "Complemento", value: settings.complement || "Não informado" },
+    { icon: "map", label: "Bairro", value: settings.district || "Não informado" },
+    { icon: "pin", label: "Cidade / UF", value: buildNfeFiscalCityState(settings) },
+    { icon: "badge", label: "CEP", value: formatZipCode(settings.zip_code) || "Não informado" },
+    { icon: "phone", label: "Telefone", value: formatNfePhone(settings.phone) || "Não informado" },
+  ];
 
   return `
-    ${renderHero(
-      "NF-e",
-      "Mantenha os dados fiscais da empresa em dia e abra a nova página exclusiva para montar e emitir a NF-e com mais conforto.",
-      `
-        <div class="hero-actions-wrap">
-          <button type="button" class="btn btn-primary" data-action="open-new-nfe-page">Cadastrar NF-e</button>
+    <section class="nfe-dashboard-page">
+      <header class="nfe-page-header">
+        <div class="nfe-breadcrumb" aria-label="Breadcrumb">
+          <span class="nfe-breadcrumb-home">${renderNfeDashboardIcon("home")}</span>
+          <span>Início</span>
+          <span class="nfe-breadcrumb-separator" aria-hidden="true">${renderNfeDashboardIcon("chevron")}</span>
+          <strong>NF-e</strong>
         </div>
-      `,
-    )}
-
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "NF-e emitidas", value: formatNumber(issued.length), helper: "Histórico geral" })}
-      ${renderMetricCard({ label: "Autorizadas", value: formatNumber(authorizedCount), helper: "Status autorizado", tone: "success" })}
-      ${renderMetricCard({ label: "NF-e manuais", value: formatNumber(manualCount), helper: "Fluxo independente de vendas", tone: "brand" })}
-      ${renderMetricCard({ label: "Próximo número", value: formatNumber(settings.next_nfe_number || 1), helper: settings.environment === "production" ? "Produção" : "Homologação", tone: "brand" })}
-    </section>
-
-    <section class="page-grid page-grid-2">
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Configurações fiscais da empresa</h3>
-            <p>Esses dados são usados no emitente da NF-e e no DANFE.</p>
-          </div>
+        <div class="nfe-page-title-block">
+          <h2>NF-e</h2>
+          <p>Painel fiscal com visão rápida da operação, configurações da empresa e acesso às últimas notas emitidas.</p>
         </div>
-        <form id="fiscal-settings-form" class="form-grid">
-          ${renderFormFeedback("fiscal")}
-          <label class="field-span-2"><span>Razão social</span><input type="text" name="company_name" value="${escapeHtml(toFormValue(settings.company_name))}"></label>
-          <label><span>Nome fantasia</span><input type="text" name="trade_name" value="${escapeHtml(toFormValue(settings.trade_name))}"></label>
-          <label><span>CNPJ</span><input type="text" name="cnpj" value="${escapeHtml(toFormValue(settings.cnpj))}" placeholder="00.000.000/0000-00"></label>
-          <label><span>Inscrição estadual</span><input type="text" name="state_registration" value="${escapeHtml(toFormValue(settings.state_registration))}"></label>
-          <label><span>Regime tributário</span><input type="text" name="tax_regime" value="${escapeHtml(toFormValue(settings.tax_regime))}" placeholder="Simples Nacional"></label>
-          <label class="field-span-2"><span>Endereço</span><input type="text" name="street" value="${escapeHtml(toFormValue(settings.street))}"></label>
-          <label><span>Número</span><input type="text" name="number" value="${escapeHtml(toFormValue(settings.number))}"></label>
-          <label><span>Complemento</span><input type="text" name="complement" value="${escapeHtml(toFormValue(settings.complement))}"></label>
-          <label><span>Bairro</span><input type="text" name="district" value="${escapeHtml(toFormValue(settings.district))}"></label>
-          <label><span>Cidade</span><input type="text" name="city" value="${escapeHtml(toFormValue(settings.city))}"></label>
-          <label><span>UF</span><input type="text" name="state" value="${escapeHtml(toFormValue(settings.state))}"></label>
-          <label><span>CEP</span><input type="text" name="zip_code" value="${escapeHtml(toFormValue(settings.zip_code))}"></label>
-          <label><span>Telefone</span><input type="text" name="phone" value="${escapeHtml(toFormValue(settings.phone))}"></label>
-          <label><span>E-mail</span><input type="email" name="email" value="${escapeHtml(toFormValue(settings.email))}"></label>
-          <label><span>Série padrão</span><input type="number" min="1" name="default_series" value="${escapeHtml(toFormValue(settings.default_series || 1))}"></label>
-          <label><span>Próximo número</span><input type="number" min="1" name="next_nfe_number" value="${escapeHtml(toFormValue(settings.next_nfe_number || 1))}"></label>
-          <label>
-            <span>Ambiente</span>
-            <select name="environment">
-              ${(state.data.options.fiscal_environments || []).map((item) => `<option value="${item}" ${settings.environment === item ? "selected" : ""}>${item === "production" ? "Produção" : "Homologação"}</option>`).join("")}
-            </select>
-          </label>
-          <label>
-            <span>Provider</span>
-            <select name="provider_name">
-              ${(state.data.options.fiscal_provider_options || []).map((item) => `<option value="${item}" ${settings.provider_name === item ? "selected" : ""}>${item}</option>`).join("")}
-            </select>
-          </label>
-          <label><span>Token/API</span><input type="text" name="api_token" value="${escapeHtml(toFormValue(settings.api_token))}"></label>
-          <label><span>URL API</span><input type="text" name="api_url" value="${escapeHtml(toFormValue(settings.api_url))}"></label>
-          <label><span>Certificado A1</span><input type="text" name="certificate_path" value="${escapeHtml(toFormValue(settings.certificate_path))}"></label>
-          <label><span>Senha certificado</span><input type="password" name="certificate_password" value="${escapeHtml(toFormValue(settings.certificate_password))}"></label>
-          <label><span>CSC</span><input type="text" name="csc" value="${escapeHtml(toFormValue(settings.csc))}"></label>
-          <label>
-            <span>Estoque negativo</span>
-            <select name="allow_negative_stock">
-              <option value="false" ${settings.allow_negative_stock ? "" : "selected"}>Bloqueado</option>
-              <option value="true" ${settings.allow_negative_stock ? "selected" : ""}>Liberado</option>
-            </select>
-          </label>
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">Salvar configurações</button>
-          </div>
-        </form>
-      </article>
+      </header>
 
-      <article class="panel">
-        <div class="section-header">
-          <div>
-            <h3>Novo fluxo de emissão</h3>
-            <p>A emissão agora acontece em uma página própria, separada da aba de vendas, para deixar o trabalho mais rápido e organizado.</p>
+      <section class="nfe-hero-card">
+        <div class="nfe-hero-top">
+          <div class="nfe-hero-main">
+            <div class="nfe-hero-document">
+              <span class="nfe-hero-document-icon" aria-hidden="true">${renderNfeDashboardIcon("file-check")}</span>
+              <span class="nfe-hero-document-badge" aria-hidden="true">${renderNfeDashboardIcon("shield-check")}</span>
+            </div>
+            <div class="nfe-hero-copy">
+              <span class="nfe-hero-kicker">Visão geral</span>
+              <h3>NF-e</h3>
+              <p>Mantenha os dados fiscais da empresa em dia e abra a nova página exclusiva para montar e emitir a NF-e com mais conforto.</p>
+            </div>
           </div>
-        </div>
-        <div class="nfe-flow-card">
-          <div class="nfe-flow-step">
-            <strong>1. Cadastre a NF-e em página separada</strong>
-            <p>Use a nova rota dedicada para informar cliente, escolher produtos, ajustar valores e emitir sem depender da aba Vendas.</p>
-          </div>
-          <div class="nfe-flow-step">
-            <strong>2. Gere os documentos fiscais</strong>
-            <p>Ao emitir, o sistema salva o XML mock autorizado e o DANFE em PDF para download imediato.</p>
-          </div>
-          <div class="nfe-flow-step">
-            <strong>3. Consulte o histórico aqui</strong>
-            <p>Depois da emissão, a NF-e volta para esta aba com número, status, cliente e links de XML/PDF.</p>
-          </div>
-          <div class="form-actions">
-            <button type="button" class="btn btn-primary btn-block" data-action="open-new-nfe-page">Abrir página de NF-e</button>
+          <div class="nfe-hero-action">
+            <button type="button" class="btn btn-primary nfe-hero-button" data-action="open-new-nfe-page">
+              <span aria-hidden="true">${renderNfeDashboardIcon("file-check")}</span>
+              Cadastrar NF-e
+            </button>
           </div>
         </div>
 
-        ${recentIssued.length ? `
-          <div class="stat-list">
-            ${recentIssued.map((record) => `
-              <div class="stat-row">
-                <div>
-                  <strong>NF-e #${escapeHtml(String(record.number_nfe))}</strong>
-                  <small>${escapeHtml(record.customer_name || "Cliente não informado")} • ${escapeHtml(record.payment_method || "-")}</small>
-                </div>
-                <div class="stat-row-right">
-                  <span>${formatMoney(record.total_amount)}</span>
-                </div>
-              </div>
-            `).join("")}
-          </div>
-        ` : renderEmptyState("Nenhuma NF-e emitida", "Assim que você emitir a primeira NF-e, ela aparecerá aqui.")}
-      </article>
-    </section>
-
-    <section class="panel">
-      <div class="section-header">
-        <div>
-          <h3>NF-e emitidas</h3>
-          <p>XML autorizado e DANFE em PDF disponíveis para download.</p>
-        </div>
-      </div>
-      <section class="panel toolbar-panel" data-filter-scope="nfe">
-        <div class="toolbar-row">
-          <label class="toolbar-field toolbar-search">
-            <span>Busca</span>
-            <input type="search" name="search" value="${escapeHtml(state.filters.nfe.search || "")}" placeholder="Número, cliente, chave, pagamento ou origem">
-          </label>
+        <div class="nfe-hero-stats-grid">
+          ${renderNfeHeroStat({
+            icon: "receipt",
+            label: "NF-e emitidas",
+            value: formatNumber(issued.length),
+            helper: "Histórico geral",
+          })}
+          ${renderNfeHeroStat({
+            icon: "shield-check",
+            label: "Autorizadas",
+            value: formatNumber(authorizedCount),
+            helper: "Status autorizado",
+            tone: "success",
+          })}
+          ${renderNfeHeroStat({
+            icon: "sparkle",
+            label: "NF-e manuais",
+            value: formatNumber(manualCount),
+            helper: "Fluxo independente de vendas",
+            tone: "brand",
+          })}
+          ${renderNfeHeroStat({
+            icon: "hash",
+            label: "Próximo número",
+            value: formatNumber(settings.next_nfe_number || 1),
+            helper: formatNfeEnvironmentLabel(settings.environment),
+            tone: "warning",
+          })}
         </div>
       </section>
-      <div data-search-results-scope="nfe">${renderNfeIssuedResults()}</div>
+
+      <section class="nfe-dashboard-columns">
+        <article class="panel nfe-dashboard-card nfe-settings-card">
+          <div class="section-header nfe-dashboard-section-header">
+            <div>
+              <h3>Configurações fiscais da empresa</h3>
+              <p>Esses dados são usados no emitente da NF-e e no DANFE.</p>
+            </div>
+            <div class="nfe-card-header-actions">
+              <span class="nfe-status-pill ${fiscalReady ? "is-ready" : "is-pending"}">${fiscalReady ? "Cadastro pronto" : "Revisar cadastro"}</span>
+              <button type="button" class="btn btn-secondary btn-compact nfe-inline-button" data-action="toggle-fiscal-settings-editor">
+                <span aria-hidden="true">${renderNfeDashboardIcon("pencil")}</span>
+                ${state.nfe.fiscalEditorOpen ? "Fechar edição" : "Editar"}
+              </button>
+            </div>
+          </div>
+
+          <div class="nfe-settings-summary-grid">
+            ${settingsSummary.map((item) => renderNfeSettingsSummaryItem(item)).join("")}
+          </div>
+
+          ${state.nfe.fiscalEditorOpen ? `
+            <div class="nfe-settings-editor-shell">
+              <div class="nfe-settings-editor-header">
+                <strong>Editar dados fiscais</strong>
+                <small>Ao salvar, o cadastro continua disponível aqui como resumo visual.</small>
+              </div>
+              <form id="fiscal-settings-form" class="form-grid nfe-settings-form-grid">
+                ${renderFormFeedback("fiscal")}
+                <div class="nfe-settings-editor-title field-span-2">Dados do emitente</div>
+                <label class="field-span-2"><span>Razão social</span><input type="text" name="company_name" value="${escapeHtml(toFormValue(settings.company_name))}"></label>
+                <label><span>Nome fantasia</span><input type="text" name="trade_name" value="${escapeHtml(toFormValue(settings.trade_name))}"></label>
+                <label><span>CNPJ</span><input type="text" name="cnpj" value="${escapeHtml(toFormValue(settings.cnpj))}" placeholder="00.000.000/0000-00"></label>
+                <label><span>Inscrição estadual</span><input type="text" name="state_registration" value="${escapeHtml(toFormValue(settings.state_registration))}"></label>
+                <label><span>Regime tributário</span><input type="text" name="tax_regime" value="${escapeHtml(toFormValue(settings.tax_regime))}" placeholder="Simples Nacional"></label>
+                <label class="field-span-2"><span>Endereço</span><input type="text" name="street" value="${escapeHtml(toFormValue(settings.street))}"></label>
+                <label><span>Número</span><input type="text" name="number" value="${escapeHtml(toFormValue(settings.number))}"></label>
+                <label><span>Complemento</span><input type="text" name="complement" value="${escapeHtml(toFormValue(settings.complement))}"></label>
+                <label><span>Bairro</span><input type="text" name="district" value="${escapeHtml(toFormValue(settings.district))}"></label>
+                <label><span>Cidade</span><input type="text" name="city" value="${escapeHtml(toFormValue(settings.city))}"></label>
+                <label><span>UF</span><input type="text" name="state" value="${escapeHtml(toFormValue(settings.state))}"></label>
+                <label><span>CEP</span><input type="text" name="zip_code" value="${escapeHtml(toFormValue(settings.zip_code))}"></label>
+                <label><span>Telefone</span><input type="text" name="phone" value="${escapeHtml(toFormValue(settings.phone))}"></label>
+                <label class="field-span-2"><span>E-mail</span><input type="email" name="email" value="${escapeHtml(toFormValue(settings.email))}"></label>
+
+                <div class="nfe-settings-editor-title field-span-2">Parâmetros de emissão</div>
+                <label><span>Série padrão</span><input type="number" min="1" name="default_series" value="${escapeHtml(toFormValue(settings.default_series || 1))}"></label>
+                <label><span>Próximo número</span><input type="number" min="1" name="next_nfe_number" value="${escapeHtml(toFormValue(settings.next_nfe_number || 1))}"></label>
+                <label>
+                  <span>Ambiente</span>
+                  <select name="environment">
+                    ${(state.data.options.fiscal_environments || []).map((item) => `<option value="${item}" ${settings.environment === item ? "selected" : ""}>${formatNfeEnvironmentLabel(item)}</option>`).join("")}
+                  </select>
+                </label>
+                <label>
+                  <span>Provider</span>
+                  <select name="provider_name">
+                    ${(state.data.options.fiscal_provider_options || []).map((item) => `<option value="${item}" ${settings.provider_name === item ? "selected" : ""}>${item}</option>`).join("")}
+                  </select>
+                </label>
+                <label><span>Token/API</span><input type="text" name="api_token" value="${escapeHtml(toFormValue(settings.api_token))}"></label>
+                <label><span>URL API</span><input type="text" name="api_url" value="${escapeHtml(toFormValue(settings.api_url))}"></label>
+                <label><span>Certificado A1</span><input type="text" name="certificate_path" value="${escapeHtml(toFormValue(settings.certificate_path))}"></label>
+                <label><span>Senha certificado</span><input type="password" name="certificate_password" value="${escapeHtml(toFormValue(settings.certificate_password))}"></label>
+                <label><span>CSC</span><input type="text" name="csc" value="${escapeHtml(toFormValue(settings.csc))}"></label>
+                <label>
+                  <span>Estoque negativo</span>
+                  <select name="allow_negative_stock">
+                    <option value="false" ${settings.allow_negative_stock ? "" : "selected"}>Bloqueado</option>
+                    <option value="true" ${settings.allow_negative_stock ? "selected" : ""}>Liberado</option>
+                  </select>
+                </label>
+                <div class="form-actions field-span-2 nfe-settings-form-actions">
+                  <button type="submit" class="btn btn-primary">Salvar configurações</button>
+                  <button type="button" class="btn btn-secondary" data-action="toggle-fiscal-settings-editor">Cancelar</button>
+                </div>
+              </form>
+            </div>
+          ` : ""}
+        </article>
+
+        <div class="nfe-dashboard-side-column">
+          <article class="panel nfe-dashboard-card nfe-flow-dashboard-card">
+            <div class="section-header nfe-dashboard-section-header">
+              <div>
+                <h3>Novo fluxo de emissão</h3>
+                <p>A emissão agora acontece em uma página própria, separada da aba de vendas, para deixar o trabalho mais rápido e organizado.</p>
+              </div>
+            </div>
+            <div class="nfe-flow-dashboard-list">
+              ${renderNfeFlowStep({
+                step: 1,
+                icon: "rocket",
+                title: "Cadastre a NF-e em página separada",
+                description: "Use a nova rota dedicada para informar cliente, escolher produtos, ajustar valores e emitir sem depender da aba Vendas.",
+                action: "open-new-nfe-page",
+              })}
+              ${renderNfeFlowStep({
+                step: 2,
+                icon: "file-check",
+                title: "Gere os documentos fiscais",
+                description: "Ao emitir, o sistema salva o XML mock autorizado e o DANFE em PDF para download imediato.",
+              })}
+              ${renderNfeFlowStep({
+                step: 3,
+                icon: "history",
+                title: "Consulte o histórico aqui",
+                description: "Depois da emissão, a NF-e volta para esta aba com número, status, cliente e links de XML/PDF.",
+                action: "scroll-nfe-history",
+              })}
+            </div>
+          </article>
+
+          <article class="panel nfe-dashboard-card nfe-quick-access-card">
+            <div class="section-header nfe-dashboard-section-header">
+              <div>
+                <h3>Acesso rápido</h3>
+                <p>Últimas NF-e emitidas com status, valor e atalho de download.</p>
+              </div>
+            </div>
+
+            ${recentIssued.length ? `
+              <div class="nfe-quick-access-list">
+                ${recentIssued.map((record) => renderNfeQuickAccessRow(record)).join("")}
+              </div>
+              <button type="button" class="nfe-inline-link" data-action="scroll-nfe-history">
+                Ver todas as NF-e emitidas
+                <span aria-hidden="true">${renderNfeDashboardIcon("arrow")}</span>
+              </button>
+            ` : renderEmptyState("Nenhuma NF-e emitida", "Assim que você emitir a primeira NF-e, ela aparecerá aqui.")}
+          </article>
+        </div>
+      </section>
+
+      <section id="nfe-issued-history" class="panel nfe-dashboard-card nfe-history-card">
+        <div class="section-header nfe-dashboard-section-header">
+          <div>
+            <h3>NF-e emitidas</h3>
+            <p>XML autorizado e DANFE em PDF disponíveis para download.</p>
+          </div>
+          <span class="nfe-status-pill is-neutral">${formatNumber(issued.length)} registro(s)</span>
+        </div>
+        <section class="panel toolbar-panel nfe-history-toolbar" data-filter-scope="nfe">
+          <div class="toolbar-row nfe-history-toolbar-row">
+            <label class="toolbar-field toolbar-search">
+              <span>Busca</span>
+              <input type="search" name="search" value="${escapeHtml(state.filters.nfe.search || "")}" placeholder="Número, cliente, chave, pagamento ou origem">
+            </label>
+          </div>
+        </section>
+        <div data-search-results-scope="nfe">${renderNfeIssuedResults()}</div>
+      </section>
     </section>
   `;
 }
@@ -6991,6 +7371,17 @@ function handlePageClick(event) {
     "open-new-nfe-page": () => {
       window.location.assign("/nfe/nova");
     },
+    "toggle-fiscal-settings-editor": () => {
+      state.nfe.fiscalEditorOpen = !state.nfe.fiscalEditorOpen;
+      if (!state.nfe.fiscalEditorOpen) {
+        clearFormFeedback("fiscal");
+      }
+      renderCurrentPage();
+    },
+    "scroll-nfe-history": () => {
+      const historySection = document.getElementById("nfe-issued-history");
+      historySection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
     "validate-nfe-sale": () => {
       void validateSelectedSaleForNfe();
     },
@@ -7472,6 +7863,7 @@ async function submitFiscalSettingsForm(form) {
   try {
     const response = await api.put("/api/fiscal-settings", payload);
     state.data.fiscal_settings = response.item;
+    state.nfe.fiscalEditorOpen = false;
     setFormFeedback("fiscal", "Configurações fiscais salvas com sucesso.", "success");
     showToast("Configurações fiscais salvas com sucesso.");
     await loadData();
