@@ -293,11 +293,39 @@
               <div id="notifications-list" class="notifications-list"></div>
             </section>
           </div>
-          <div class="user-chip">
-            <span id="current-user-name">Administrador</span>
-            <small>Ambiente local</small>
+          <div id="profile-menu" class="profile-menu">
+            <button
+              id="profile-menu-button"
+              class="profile-menu-trigger"
+              type="button"
+              aria-haspopup="true"
+              aria-controls="profile-menu-panel"
+              aria-expanded="false"
+            >
+              <span id="current-user-avatar" class="profile-avatar" aria-hidden="true">AD</span>
+              <span class="profile-trigger-copy">
+                <strong id="current-user-name">Administrador</strong>
+                <small id="current-user-environment">Ambiente local</small>
+              </span>
+              <span class="profile-trigger-chevron" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="m8 10 4 4 4-4"></path>
+                </svg>
+              </span>
+            </button>
+
+            <section id="profile-menu-panel" class="profile-menu-panel" aria-label="Menu do usuário">
+              <div class="profile-menu-header">
+                <span id="profile-menu-avatar" class="profile-avatar profile-avatar-large" aria-hidden="true">AD</span>
+                <div class="profile-menu-header-copy">
+                  <strong id="profile-menu-user-name">Administrador</strong>
+                  <small id="profile-menu-user-environment">Ambiente local</small>
+                </div>
+              </div>
+              <div class="profile-menu-divider" aria-hidden="true"></div>
+              <div id="profile-menu-sections" class="profile-menu-sections"></div>
+            </section>
           </div>
-          <button id="logout-button" class="btn btn-secondary" type="button">Sair</button>
         </div>
       </header>
 

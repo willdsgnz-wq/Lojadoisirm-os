@@ -45,6 +45,173 @@ const pageTitles = {
   reports: "Relatórios",
 };
 
+const PROFILE_MENU_PAGE_KEY_MAP = {
+  sales: "dashboard",
+  products: "shortcut-products",
+  customers: "users",
+  nfe: "shortcut-nfe",
+  reports: "shortcut-reports",
+};
+
+const PROFILE_MENU_SECTIONS = [
+  {
+    title: "Navegação",
+    items: [
+      { key: "dashboard", label: "Dashboard", icon: "layout-dashboard", action: { type: "page", page: "sales" } },
+      { key: "favorites", label: "Favoritos", icon: "star", action: { type: "toast", message: "Seus favoritos aparecerão aqui em breve." } },
+      { key: "recent", label: "Recentes", icon: "clock-3", action: { type: "toast", message: "Seu histórico recente aparecerá aqui em breve." } },
+      {
+        key: "shortcuts",
+        label: "Atalhos",
+        icon: "sparkles",
+        children: [
+          { key: "shortcut-products", label: "Produtos", icon: "box", action: { type: "page", page: "products" } },
+          { key: "shortcut-nfe", label: "NF-e", icon: "file-text", action: { type: "page", page: "nfe" } },
+          { key: "shortcut-reports", label: "Relatórios", icon: "bar-chart-3", action: { type: "page", page: "reports" } },
+        ],
+      },
+    ],
+  },
+  {
+    title: "Configurações",
+    items: [
+      { key: "users", label: "Usuários", icon: "users", action: { type: "page", page: "customers" } },
+      { key: "companies", label: "Empresas", icon: "building-2", action: { type: "toast", message: "A área de empresas será conectada a este menu em breve." } },
+      { key: "settings", label: "Configurações", icon: "settings-2", action: { type: "toast", message: "As configurações gerais do sistema ficarão centralizadas aqui em breve." } },
+      { key: "integrations", label: "Integrações", icon: "plug-zap", action: { type: "toast", message: "As integrações do sistema aparecerão neste menu em breve." } },
+    ],
+  },
+  {
+    title: "Suporte",
+    items: [
+      { key: "help-center", label: "Central de ajuda", icon: "life-buoy", action: { type: "toast", message: "A central de ajuda será integrada aqui em breve. Enquanto isso, use o card de suporte na lateral." } },
+      { key: "contact-us", label: "Fale conosco", icon: "messages-square", action: { type: "toast", message: "O canal de contato direto será habilitado neste menu em breve." } },
+    ],
+  },
+];
+
+const PROFILE_MENU_FOOTER_ACTION = {
+  key: "logout",
+  label: "Sair",
+  icon: "log-out",
+  action: { type: "logout" },
+};
+
+const PROFILE_ICON_MAP = {
+  "layout-dashboard": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5"></rect>
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.5"></rect>
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.5"></rect>
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.5"></rect>
+    </svg>
+  `,
+  star: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m12 3.8 2.5 5.06 5.58.81-4.04 3.94.95 5.56L12 16.5 7.01 19.17l.95-5.56-4.04-3.94 5.58-.81z"></path>
+    </svg>
+  `,
+  "clock-3": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5"></circle>
+      <path d="M12 7.5v5l3.5 2"></path>
+    </svg>
+  `,
+  sparkles: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2z"></path>
+      <path d="m18 13 .7 2.3L21 16l-2.3.7L18 19l-.7-2.3L15 16l2.3-.7z"></path>
+      <path d="m6 14 .7 2.1L9 16.8 6.7 17.5 6 19.6l-.7-2.1L3 16.8l2.3-.7z"></path>
+    </svg>
+  `,
+  box: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3.8 19.2 7.5v9L12 20.2 4.8 16.5v-9z"></path>
+      <path d="M4.8 7.5 12 11.2l7.2-3.7"></path>
+      <path d="M12 11.2v9"></path>
+    </svg>
+  `,
+  "file-text": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 3.5h7l4.5 4.5V19A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"></path>
+      <path d="M14 3.5V8h4.5"></path>
+      <path d="M9 12h6"></path>
+      <path d="M9 16h6"></path>
+    </svg>
+  `,
+  "bar-chart-3": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 20v-8"></path>
+      <path d="M10 20V8"></path>
+      <path d="M15 20V4"></path>
+      <path d="M20 20v-6"></path>
+    </svg>
+  `,
+  users: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3z"></path>
+      <path d="M15.5 12.5a2.5 2.5 0 1 0-2.5-2.5 2.5 2.5 0 0 0 2.5 2.5z"></path>
+      <path d="M3.8 19a5.2 5.2 0 0 1 10.4 0"></path>
+      <path d="M13 18.8a4.2 4.2 0 0 1 7.2-2.8"></path>
+    </svg>
+  `,
+  "building-2": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4.5 20.5h15"></path>
+      <path d="M6.5 20.5V6.5l5.5-2v16"></path>
+      <path d="M12 8.5h5.5v12"></path>
+      <path d="M8.5 9.5h1"></path>
+      <path d="M8.5 12.5h1"></path>
+      <path d="M14.5 11.5h1"></path>
+      <path d="M14.5 14.5h1"></path>
+    </svg>
+  `,
+  "settings-2": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 8.5A3.5 3.5 0 1 0 15.5 12 3.5 3.5 0 0 0 12 8.5z"></path>
+      <path d="m19.4 12 .94-1.63-1.72-2.98-1.87.37a6.96 6.96 0 0 0-1.4-.8L14.7 5h-3.4l-.69 1.96a6.96 6.96 0 0 0-1.4.8l-1.87-.37-1.72 2.98L4.6 12l.94 1.63-1.72 2.98 1.87.37c.41.32.88.59 1.4.8L11.3 20h3.4l.69-1.96c.52-.21.99-.48 1.4-.8l1.87.37 1.72-2.98z"></path>
+    </svg>
+  `,
+  "plug-zap": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 7V4.5"></path>
+      <path d="M15 7V4.5"></path>
+      <path d="M7 9h10v2a5 5 0 0 1-5 5 5 5 0 0 1-5-5z"></path>
+      <path d="M12 16v3.5"></path>
+      <path d="m16 13 2-2.2h-1.8L18 8"></path>
+    </svg>
+  `,
+  "life-buoy": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5"></circle>
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M7.8 7.8 9.9 9.9"></path>
+      <path d="M14.1 14.1 16.2 16.2"></path>
+      <path d="M16.2 7.8 14.1 9.9"></path>
+      <path d="M9.9 14.1 7.8 16.2"></path>
+    </svg>
+  `,
+  "messages-square": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5.5 6.5A2 2 0 0 1 7.5 4.5h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H12l-3.5 3v-3H7.5a2 2 0 0 1-2-2z"></path>
+      <path d="M8.5 9.5h7"></path>
+      <path d="M8.5 12.5h4.5"></path>
+    </svg>
+  `,
+  "log-out": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10 6.5H7.5a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2H10"></path>
+      <path d="M13 16.5 18 12l-5-4.5"></path>
+      <path d="M18 12H9"></path>
+    </svg>
+  `,
+  "chevron-right": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m10 8 4 4-4 4"></path>
+    </svg>
+  `,
+};
+
 const BRAND_LOGO_PATH = "/assets/brand/logo_dois_irmaos_final.png";
 const PRODUCTS_PER_PAGE = 10;
 const SALES_HISTORY_PER_PAGE = 5;
@@ -93,6 +260,11 @@ const state = {
   notifications: {
     items: [],
     open: false,
+  },
+  profileMenu: {
+    open: false,
+    activeKey: "dashboard",
+    shortcutsOpen: false,
   },
   nfe: {
     selectedSaleId: "",
@@ -215,8 +387,9 @@ const elements = {
   topAlertContainer: document.getElementById("top-alert-container"),
   pageTitle: document.getElementById("page-title"),
   currentUserName: document.getElementById("current-user-name"),
+  currentUserEnvironment: document.getElementById("current-user-environment"),
+  currentUserAvatar: document.getElementById("current-user-avatar"),
   installAppButton: document.getElementById("install-app-button"),
-  logoutButton: document.getElementById("logout-button"),
   notificationCenter: document.getElementById("notification-center"),
   notificationsButton: document.getElementById("notifications-button"),
   notificationsBadge: document.getElementById("notifications-badge"),
@@ -224,6 +397,13 @@ const elements = {
   notificationsList: document.getElementById("notifications-list"),
   notificationsClearButton: document.getElementById("notifications-clear"),
   notificationsSubtitle: document.getElementById("notifications-subtitle"),
+  profileMenu: document.getElementById("profile-menu"),
+  profileMenuButton: document.getElementById("profile-menu-button"),
+  profileMenuPanel: document.getElementById("profile-menu-panel"),
+  profileMenuAvatar: document.getElementById("profile-menu-avatar"),
+  profileMenuUserName: document.getElementById("profile-menu-user-name"),
+  profileMenuUserEnvironment: document.getElementById("profile-menu-user-environment"),
+  profileMenuSections: document.getElementById("profile-menu-sections"),
   toastContainer: document.getElementById("toast-container"),
   sidebar: document.getElementById("sidebar"),
   sidebarBackdrop: document.getElementById("sidebar-backdrop"),
@@ -255,10 +435,11 @@ async function init() {
 function bindGlobalEvents() {
   elements.loginForm.addEventListener("submit", handleLoginSubmit);
   elements.installAppButton?.addEventListener("click", handleInstallApp);
-  elements.logoutButton.addEventListener("click", handleLogout);
   elements.notificationsButton?.addEventListener("click", handleNotificationsToggle);
   elements.notificationsClearButton?.addEventListener("click", handleClearNotifications);
   elements.notificationsList?.addEventListener("click", handleNotificationListClick);
+  elements.profileMenuButton?.addEventListener("click", handleProfileMenuToggle);
+  elements.profileMenuPanel?.addEventListener("click", handleProfileMenuPanelClick);
   elements.topAlertContainer?.addEventListener("click", handleTopAlertClick);
   elements.openSidebarButton?.addEventListener("click", handleSidebarToggle);
   elements.closeSidebarButton?.addEventListener("click", () => setMobileSidebarOpen(false));
@@ -298,6 +479,9 @@ function showLogin() {
   elements.loginView.classList.remove("hidden");
   elements.appShell.classList.add("hidden");
   state.layout.sidebarMobileOpen = false;
+  state.profileMenu.open = false;
+  state.profileMenu.activeKey = "dashboard";
+  state.profileMenu.shortcutsOpen = false;
   applySidebarLayout();
   state.notifications.items = [];
   state.notifications.open = false;
@@ -306,6 +490,7 @@ function showLogin() {
   state.topAlert = null;
   renderNotifications();
   renderTopAlert();
+  renderProfileMenu();
   updateInstallButtonVisibility();
 }
 
@@ -313,11 +498,172 @@ function showLogin() {
 function showApp() {
   elements.loginView.classList.add("hidden");
   elements.appShell.classList.remove("hidden");
-  elements.currentUserName.textContent = state.user?.full_name || "Administrador";
+  renderProfileMenu();
   applySidebarLayout();
   renderNotifications();
   renderTopAlert();
   updateInstallButtonVisibility();
+}
+
+
+function getEnvironmentLabel() {
+  return DEV_HOST_REGEX.test(window.location.hostname) ? "Ambiente local" : "Ambiente online";
+}
+
+
+function getUserInitials(name) {
+  const parts = String(name || "Administrador")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("");
+  return initials || "AD";
+}
+
+
+function syncProfileMenuActive(page = state.page) {
+  const mappedKey = PROFILE_MENU_PAGE_KEY_MAP[page];
+  if (!mappedKey) return;
+
+  state.profileMenu.activeKey = mappedKey;
+  state.profileMenu.shortcutsOpen = mappedKey.startsWith("shortcut-");
+}
+
+
+function renderProfileMenu() {
+  const userName = state.user?.full_name || "Administrador";
+  const environmentLabel = getEnvironmentLabel();
+  const initials = getUserInitials(userName);
+
+  if (elements.currentUserName) {
+    elements.currentUserName.textContent = userName;
+  }
+  if (elements.currentUserEnvironment) {
+    elements.currentUserEnvironment.textContent = environmentLabel;
+  }
+  if (elements.currentUserAvatar) {
+    elements.currentUserAvatar.textContent = initials;
+  }
+  if (elements.profileMenuUserName) {
+    elements.profileMenuUserName.textContent = userName;
+  }
+  if (elements.profileMenuUserEnvironment) {
+    elements.profileMenuUserEnvironment.textContent = environmentLabel;
+  }
+  if (elements.profileMenuAvatar) {
+    elements.profileMenuAvatar.textContent = initials;
+  }
+  if (elements.profileMenu) {
+    elements.profileMenu.classList.toggle("open", state.profileMenu.open);
+  }
+  if (elements.profileMenuButton) {
+    elements.profileMenuButton.setAttribute("aria-expanded", state.profileMenu.open ? "true" : "false");
+  }
+  if (elements.profileMenuSections) {
+    elements.profileMenuSections.innerHTML = renderProfileMenuSections();
+  }
+}
+
+
+function renderProfileMenuSections() {
+  const sectionsMarkup = PROFILE_MENU_SECTIONS.map((section) => `
+    <section class="profile-menu-section">
+      <span class="profile-menu-section-title">${escapeHtml(section.title)}</span>
+      <div class="profile-menu-list">
+        ${section.items.map((item) => renderProfileMenuItem(item)).join("")}
+      </div>
+    </section>
+  `).join("");
+
+  return `
+    ${sectionsMarkup}
+    <div class="profile-menu-footer">
+      ${renderProfileMenuActionButton(PROFILE_MENU_FOOTER_ACTION, { danger: true })}
+    </div>
+  `;
+}
+
+
+function renderProfileMenuItem(item) {
+  const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+  const childIsActive = hasChildren && item.children.some((child) => child.key === state.profileMenu.activeKey);
+  const isActive = state.profileMenu.activeKey === item.key || childIsActive;
+
+  if (!hasChildren) {
+    return renderProfileMenuActionButton(item, { active: isActive });
+  }
+
+  const isOpen = state.profileMenu.shortcutsOpen || childIsActive;
+  return `
+    <div class="profile-submenu ${isOpen ? "open" : ""}">
+      <button
+        type="button"
+        class="profile-menu-item ${isActive ? "is-active" : ""}"
+        data-profile-submenu-toggle="${escapeHtml(item.key)}"
+      >
+        <span class="profile-menu-item-copy">
+          <span class="profile-menu-item-icon">${renderProfileMenuIcon(item.icon)}</span>
+          <span class="profile-menu-item-label">${escapeHtml(item.label)}</span>
+        </span>
+        <span class="profile-menu-item-arrow">${renderProfileMenuIcon("chevron-right")}</span>
+      </button>
+      <div class="profile-submenu-panel">
+        ${item.children.map((child) => renderProfileMenuActionButton(child, {
+          active: child.key === state.profileMenu.activeKey,
+          parentKey: item.key,
+          submenu: true,
+        })).join("")}
+      </div>
+    </div>
+  `;
+}
+
+
+function renderProfileMenuActionButton(item, { active = false, danger = false, parentKey = "", submenu = false } = {}) {
+  const classNames = [
+    submenu ? "profile-submenu-item" : "profile-menu-item",
+    active ? "is-active" : "",
+    danger ? "profile-menu-item-danger" : "",
+  ].filter(Boolean).join(" ");
+
+  return `
+    <button
+      type="button"
+      class="${classNames}"
+      ${buildProfileMenuActionAttributes(item, parentKey)}
+    >
+      <span class="profile-menu-item-copy">
+        <span class="profile-menu-item-icon">${renderProfileMenuIcon(item.icon)}</span>
+        <span class="profile-menu-item-label">${escapeHtml(item.label)}</span>
+      </span>
+      ${submenu ? `<span class="profile-menu-item-arrow">${renderProfileMenuIcon("chevron-right")}</span>` : ""}
+    </button>
+  `;
+}
+
+
+function buildProfileMenuActionAttributes(item, parentKey = "") {
+  const attributes = [
+    `data-profile-menu-key="${escapeHtml(item.key)}"`,
+    `data-profile-menu-action="${escapeHtml(item.action?.type || "toast")}"`,
+  ];
+
+  if (item.action?.page) {
+    attributes.push(`data-profile-menu-page="${escapeHtml(item.action.page)}"`);
+  }
+  if (item.action?.message) {
+    attributes.push(`data-profile-menu-message="${escapeHtml(item.action.message)}"`);
+  }
+  if (parentKey) {
+    attributes.push(`data-profile-menu-parent="${escapeHtml(parentKey)}"`);
+  }
+
+  return attributes.join(" ");
+}
+
+
+function renderProfileMenuIcon(icon) {
+  return PROFILE_ICON_MAP[icon] || PROFILE_ICON_MAP["layout-dashboard"];
 }
 
 
@@ -764,9 +1110,13 @@ function dismissNotifications(ids = []) {
 
 function handleNotificationsToggle(event) {
   event.preventDefault();
-  event.stopPropagation();
-  state.notifications.open = !state.notifications.open;
+  const shouldOpen = !state.notifications.open;
+  state.notifications.open = shouldOpen;
+  if (shouldOpen) {
+    state.profileMenu.open = false;
+  }
   renderNotifications();
+  renderProfileMenu();
 }
 
 
@@ -788,14 +1138,94 @@ function handleNotificationListClick(event) {
 }
 
 
+function handleProfileMenuToggle(event) {
+  event.preventDefault();
+  const shouldOpen = !state.profileMenu.open;
+  state.profileMenu.open = shouldOpen;
+  if (shouldOpen) {
+    state.notifications.open = false;
+  }
+  renderNotifications();
+  renderProfileMenu();
+}
+
+
+async function handleProfileMenuPanelClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const submenuToggle = target.closest("[data-profile-submenu-toggle]");
+  if (submenuToggle) {
+    const submenuKey = submenuToggle.getAttribute("data-profile-submenu-toggle");
+    if (submenuKey === "shortcuts") {
+      state.profileMenu.shortcutsOpen = !state.profileMenu.shortcutsOpen;
+      if (state.profileMenu.shortcutsOpen) {
+        state.profileMenu.activeKey = submenuKey;
+      }
+      renderProfileMenu();
+    }
+    return;
+  }
+
+  const actionButton = target.closest("[data-profile-menu-action]");
+  if (!(actionButton instanceof HTMLElement)) return;
+
+  const actionType = actionButton.dataset.profileMenuAction || "toast";
+  const actionKey = actionButton.dataset.profileMenuKey || state.profileMenu.activeKey;
+  const actionPage = actionButton.dataset.profileMenuPage || "";
+  const actionMessage = actionButton.dataset.profileMenuMessage || "";
+  const actionParent = actionButton.dataset.profileMenuParent || "";
+
+  state.profileMenu.open = false;
+  if (actionType !== "logout") {
+    state.profileMenu.activeKey = actionKey;
+  }
+  if (actionParent === "shortcuts") {
+    state.profileMenu.shortcutsOpen = true;
+  } else if (actionType !== "logout") {
+    state.profileMenu.shortcutsOpen = false;
+  }
+  renderProfileMenu();
+
+  if (actionType === "page" && actionPage) {
+    setPage(actionPage);
+    return;
+  }
+
+  if (actionType === "logout") {
+    await handleLogout();
+    return;
+  }
+
+  if (actionMessage) {
+    showToast(actionMessage, "info");
+  }
+}
+
+
 function handleDocumentClick(event) {
-  if (!state.notifications.open) return;
   const target = event.target;
   if (!(target instanceof Node)) return;
-  if (elements.notificationCenter?.contains(target)) return;
 
-  state.notifications.open = false;
-  renderNotifications();
+  let shouldRenderNotifications = false;
+  let shouldRenderProfileMenu = false;
+
+  if (state.notifications.open && !elements.notificationCenter?.contains(target)) {
+    state.notifications.open = false;
+    shouldRenderNotifications = true;
+  }
+
+  if (state.profileMenu.open && !elements.profileMenu?.contains(target)) {
+    state.profileMenu.open = false;
+    shouldRenderProfileMenu = true;
+  }
+
+  if (shouldRenderNotifications) {
+    renderNotifications();
+  }
+  if (shouldRenderProfileMenu) {
+    renderProfileMenu();
+  }
 }
 
 
@@ -805,6 +1235,11 @@ function handleGlobalKeyDown(event) {
   if (state.notifications.open) {
     state.notifications.open = false;
     renderNotifications();
+  }
+
+  if (state.profileMenu.open) {
+    state.profileMenu.open = false;
+    renderProfileMenu();
   }
 
   if (state.layout.sidebarMobileOpen) {
@@ -885,6 +1320,9 @@ async function handleLogout() {
     state.user = null;
     state.notifications.items = [];
     state.notifications.open = false;
+    state.profileMenu.open = false;
+    state.profileMenu.activeKey = "dashboard";
+    state.profileMenu.shortcutsOpen = false;
     state.nfe.validation = null;
     state.nfe.selectedSaleId = "";
     state.topAlert = null;
@@ -912,7 +1350,7 @@ async function loadData() {
     fiscal_settings: payload.fiscal_settings || {},
     options: payload.options || state.data.options,
   };
-  elements.currentUserName.textContent = state.user.full_name;
+  renderProfileMenu();
   refreshNotifications();
   renderTopAlert();
   renderCurrentPage();
@@ -948,6 +1386,8 @@ function renderCurrentPage() {
     state.page = activePage;
   }
 
+  syncProfileMenuActive(activePage);
+  renderProfileMenu();
   elements.pageTitle.textContent = pageTitles[activePage] || "Sistema";
   document.title = `${BRAND_NAME} | ${pageTitles[activePage] || "Sistema"}`;
   elements.navLinks.forEach((link) => {
