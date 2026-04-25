@@ -215,6 +215,7 @@ const PROFILE_ICON_MAP = {
 const BRAND_LOGO_PATH = "/assets/brand/logo_dois_irmaos_final.png";
 const PRODUCTS_PER_PAGE = 10;
 const SALES_HISTORY_PER_PAGE = 5;
+const SEARCH_INPUT_DEBOUNCE_MS = 250;
 const PRODUCT_ORIGIN_OPTIONS = [
   { value: "0", label: "0 - Nacional" },
   { value: "1", label: "1 - Estrangeira (importação direta)" },
@@ -367,6 +368,11 @@ const state = {
 };
 
 const searchTimers = new Map();
+const filteredSalesCache = {
+  source: null,
+  key: "",
+  result: null,
+};
 const formScopeMap = {
   "products-form": "products",
   "stock-form": "stock",
@@ -4064,7 +4070,26 @@ function renderCustomersListResults() {
 }
 
 
+function getFilteredSalesCacheKey() {
+  const filter = state.filters.sales;
+  return [
+    filter.preset,
+    filter.day,
+    filter.start,
+    filter.end,
+    filter.payment_method,
+    String(filter.search || "").trim().toLowerCase(),
+    state.data.sales.length,
+  ].join("|");
+}
+
+
 function getFilteredSalesData() {
+  const cacheKey = getFilteredSalesCacheKey();
+  if (filteredSalesCache.source === state.data.sales && filteredSalesCache.key === cacheKey && filteredSalesCache.result) {
+    return filteredSalesCache.result;
+  }
+
   const period = getPeriod("sales");
   let periodSales = filterByPeriod(state.data.sales, "sale_date", period);
   if (state.filters.sales.payment_method) {
@@ -4076,11 +4101,16 @@ function getFilteredSalesData() {
     state.filters.sales.search,
   );
 
-  return {
+  const result = {
     period,
     sales,
     shiftSummary: getSalesShiftSummary(sales),
   };
+
+  filteredSalesCache.source = state.data.sales;
+  filteredSalesCache.key = cacheKey;
+  filteredSalesCache.result = result;
+  return result;
 }
 
 
@@ -7565,7 +7595,7 @@ function handlePageInput(event) {
     searchTimers.set(scope, setTimeout(() => {
       searchTimers.delete(scope);
       renderFilterResultsScope(scope);
-    }, 160));
+    }, SEARCH_INPUT_DEBOUNCE_MS));
     return;
   }
 

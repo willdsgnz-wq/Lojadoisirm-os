@@ -9,3 +9,5 @@ server.out
 server-err.log
 server-out.log
 database/store.db
+desktop-app/runtime/
+dist/

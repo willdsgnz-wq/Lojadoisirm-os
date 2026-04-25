@@ -5,7 +5,24 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / ".env"
+
+
+def resolve_runtime_path(environment_key: str, default_path: Path) -> Path:
+    raw_value = str(os.environ.get(environment_key) or "").strip()
+    if not raw_value:
+        return default_path
+
+    candidate = Path(raw_value).expanduser()
+    if not candidate.is_absolute():
+        candidate = (BASE_DIR / candidate).resolve()
+    return candidate
+
+
+ENV_PATH = resolve_runtime_path("DOISIRMAOS_ENV_FILE", BASE_DIR / ".env")
+
+
+def get_storage_root() -> Path:
+    return resolve_runtime_path("DOISIRMAOS_STORAGE_DIR", BASE_DIR / "storage")
 
 
 def load_environment() -> None:

@@ -2223,7 +2223,7 @@ button.nfe-flow-dashboard-step {
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
 .profile-menu-item-copy {
@@ -5605,4 +5605,58 @@ button.nfe-flow-dashboard-step {
     display: grid;
     grid-template-columns: 1fr;
   }
+}
+
+html[data-desktop-shell="electron"] {
+  --shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-soft: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+html[data-desktop-shell="electron"] body {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+html[data-desktop-shell="electron"] body::before {
+  display: none;
+}
+
+html[data-desktop-shell="electron"] .login-showcase,
+html[data-desktop-shell="electron"] .login-card,
+html[data-desktop-shell="electron"] .panel,
+html[data-desktop-shell="electron"] .hero-panel,
+html[data-desktop-shell="electron"] .toolbar-panel,
+html[data-desktop-shell="electron"] .chart-card,
+html[data-desktop-shell="electron"] .metric-card,
+html[data-desktop-shell="electron"] .topbar,
+html[data-desktop-shell="electron"] .profile-menu-panel,
+html[data-desktop-shell="electron"] .notifications-panel,
+html[data-desktop-shell="electron"] .sales-hero-pill,
+html[data-desktop-shell="electron"] .sales-kpi-card {
+  backdrop-filter: none;
+}
+
+html[data-desktop-shell="electron"] .sidebar,
+html[data-desktop-shell="electron"] .topbar,
+html[data-desktop-shell="electron"] .profile-menu-panel,
+html[data-desktop-shell="electron"] .notifications-panel,
+html[data-desktop-shell="electron"] .sales-executive-hero,
+html[data-desktop-shell="electron"] .quotes-builder-panel,
+html[data-desktop-shell="electron"] .quotes-list-panel,
+html[data-desktop-shell="electron"] .quotes-list-toolbar,
+html[data-desktop-shell="electron"] .products-hero,
+html[data-desktop-shell="electron"] .products-hero-action,
+html[data-desktop-shell="electron"] .products-hero-pill,
+html[data-desktop-shell="electron"] .quote-builder-badge,
+html[data-desktop-shell="electron"] .quotes-summary-card,
+html[data-desktop-shell="electron"] .quotes-primary-submit,
+html[data-desktop-shell="electron"] .sales-summary-card {
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+html[data-desktop-shell="electron"] .sidebar {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.05), 10px 0 22px rgba(3, 10, 28, 0.12);
+}
+
+html[data-desktop-shell="electron"] .sales-executive-hero {
+  box-shadow: 0 8px 18px rgba(30, 58, 138, 0.16);
 }

@@ -1,0 +1,95 @@
+{
+  "name": "material-construcao-dois-irmaos-desktop",
+  "version": "1.0.0",
+  "description": "Camada Electron para empacotar o sistema Flask Material de Construção Dois Irmãos como aplicativo desktop Windows.",
+  "main": "desktop-app/main.js",
+  "scripts": {
+    "prepare:desktop": "node desktop-app/scripts/prepare-runtime.js",
+    "start": "node desktop-app/scripts/prepare-runtime.js && electron .",
+    "build": "node desktop-app/scripts/prepare-runtime.js && electron-builder",
+    "test": "echo \"Nenhum teste automatizado configurado para a camada desktop.\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/willdsgnz-wq/Lojadoisirm-os.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/willdsgnz-wq/Lojadoisirm-os/issues"
+  },
+  "homepage": "https://github.com/willdsgnz-wq/Lojadoisirm-os#readme",
+  "devDependencies": {
+    "electron": "^41.3.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.doisirmaos.desktop",
+    "productName": "Material de Construção Dois Irmãos",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "desktop-app/assets"
+    },
+    "files": [
+      "desktop-app/**/*",
+      "!desktop-app/runtime{,/**}",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "app.py",
+        "to": "server/app.py"
+      },
+      {
+        "from": "backend",
+        "to": "server/backend"
+      },
+      {
+        "from": "database",
+        "to": "server/database"
+      },
+      {
+        "from": "frontend",
+        "to": "server/frontend"
+      },
+      {
+        "from": ".runtime-packages",
+        "to": "server/.runtime-packages"
+      },
+      {
+        "from": "desktop-app/runtime/python",
+        "to": "runtime/python"
+      },
+      {
+        "from": "desktop-app/runtime/default-env",
+        "to": "runtime/default-env"
+      }
+    ],
+    "win": {
+  "icon": "desktop-app/assets/app-icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Material-de-Construcao-Dois-Irmaos-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerIcon": "desktop-app/assets/app-icon.ico",
+      "uninstallerIcon": "desktop-app/assets/app-icon.ico",
+      "installerHeaderIcon": "desktop-app/assets/app-icon.ico"
+    }
+  }
+}

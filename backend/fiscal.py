@@ -22,11 +22,12 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, Table, TableStyle
 
+from backend.config import get_storage_root
 from backend.utils import round_money
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STORAGE_ROOT = BASE_DIR / "storage" / "nfe"
+STORAGE_ROOT = get_storage_root() / "nfe"
 LOGO_CANDIDATES = (
     BASE_DIR / "frontend" / "static" / "brand" / "logo_dois_irmaos_final.png",
     BASE_DIR / "frontend" / "static" / "brand" / "logo_dois_irmaos.png",
