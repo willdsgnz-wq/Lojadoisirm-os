@@ -2659,7 +2659,7 @@ def get_nfe_file_info(nfe_id: int, file_type: str) -> dict[str, Any]:
 def get_today_due_checks_summary() -> dict[str, Any]:
     today = today_iso()
     with get_connection() as connection:
-        rows = connection.execute(
+        due_today_rows = connection.execute(
             """
             SELECT amount
             FROM checks
@@ -2668,21 +2668,35 @@ def get_today_due_checks_summary() -> dict[str, Any]:
             """,
             (today,),
         ).fetchall()
-    total_amount = round_money(sum(float(row["amount"] or 0) for row in rows))
-    count = len(rows)
+        overdue_rows = connection.execute(
+            """
+            SELECT amount
+            FROM checks
+            WHERE due_date <> ?
+              AND (due_date < ? OR status = 'Atrasado')
+              AND status NOT IN ('Compensado', 'Cancelado')
+            """,
+            (today, today),
+        ).fetchall()
+    total_amount = round_money(sum(float(row["amount"] or 0) for row in due_today_rows))
+    overdue_total_amount = round_money(sum(float(row["amount"] or 0) for row in overdue_rows))
+    count = len(due_today_rows)
+    overdue_count = len(overdue_rows)
     return {
-        "id": f"daily-check-alert-{today}",
+        "id": f"daily-check-alert-{today}-{count}-{overdue_count}-{total_amount}-{overdue_total_amount}",
         "date": today,
         "count": count,
         "total_amount": total_amount,
-        "has_alert": total_amount > 0,
+        "overdue_count": overdue_count,
+        "overdue_total_amount": overdue_total_amount,
+        "has_alert": total_amount > 0 or overdue_total_amount > 0,
     }
 
 
 def get_today_due_bills_summary() -> dict[str, Any]:
     today = today_iso()
     with get_connection() as connection:
-        rows = connection.execute(
+        due_today_rows = connection.execute(
             """
             SELECT amount
             FROM bills
@@ -2691,14 +2705,27 @@ def get_today_due_bills_summary() -> dict[str, Any]:
             """,
             (today,),
         ).fetchall()
-    total_amount = round_money(sum(float(row["amount"] or 0) for row in rows))
-    count = len(rows)
+        overdue_rows = connection.execute(
+            """
+            SELECT amount
+            FROM bills
+            WHERE due_date < ?
+              AND is_paid = FALSE
+            """,
+            (today,),
+        ).fetchall()
+    total_amount = round_money(sum(float(row["amount"] or 0) for row in due_today_rows))
+    overdue_total_amount = round_money(sum(float(row["amount"] or 0) for row in overdue_rows))
+    count = len(due_today_rows)
+    overdue_count = len(overdue_rows)
     return {
-        "id": f"daily-bill-alert-{today}",
+        "id": f"daily-bill-alert-{today}-{count}-{overdue_count}-{total_amount}-{overdue_total_amount}",
         "date": today,
         "count": count,
         "total_amount": total_amount,
-        "has_alert": total_amount > 0,
+        "overdue_count": overdue_count,
+        "overdue_total_amount": overdue_total_amount,
+        "has_alert": total_amount > 0 or overdue_total_amount > 0,
     }
 
 

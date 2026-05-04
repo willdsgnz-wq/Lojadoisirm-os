@@ -33,24 +33,17 @@ const DEV_HOST_REGEX = /^(localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|10(?:\.\d{1,3
 const SIDEBAR_MOBILE_QUERY = window.matchMedia("(max-width: 960px)");
 
 const pageTitles = {
-  products: "Produtos",
-  stock: "Estoque",
-  customers: "Clientes",
   sales: "Vendas",
-  quotes: "Orçamentos",
-  nfe: "NF-e",
   expenses: "Contas Pagas",
   bills: "Boletos",
   checks: "Cheques",
-  reports: "Relatórios",
 };
 
 const PROFILE_MENU_PAGE_KEY_MAP = {
   sales: "dashboard",
-  products: "shortcut-products",
-  customers: "users",
-  nfe: "shortcut-nfe",
-  reports: "shortcut-reports",
+  expenses: "shortcut-expenses",
+  bills: "shortcut-bills",
+  checks: "shortcut-checks",
 };
 
 const PROFILE_MENU_SECTIONS = [
@@ -65,9 +58,9 @@ const PROFILE_MENU_SECTIONS = [
         label: "Atalhos",
         icon: "sparkles",
         children: [
-          { key: "shortcut-products", label: "Produtos", icon: "box", action: { type: "page", page: "products" } },
-          { key: "shortcut-nfe", label: "NF-e", icon: "file-text", action: { type: "page", page: "nfe" } },
-          { key: "shortcut-reports", label: "Relatórios", icon: "bar-chart-3", action: { type: "page", page: "reports" } },
+          { key: "shortcut-expenses", label: "Contas Pagas", icon: "credit-card", action: { type: "page", page: "expenses" } },
+          { key: "shortcut-bills", label: "Boletos", icon: "barcode", action: { type: "page", page: "bills" } },
+          { key: "shortcut-checks", label: "Cheques", icon: "credit-card", action: { type: "page", page: "checks" } },
         ],
       },
     ],
@@ -75,7 +68,7 @@ const PROFILE_MENU_SECTIONS = [
   {
     title: "Configurações",
     items: [
-      { key: "users", label: "Usuários", icon: "users", action: { type: "page", page: "customers" } },
+      { key: "users", label: "Usuários", icon: "users", action: { type: "toast", message: "A área de usuários será conectada a este menu em breve." } },
       { key: "companies", label: "Empresas", icon: "building-2", action: { type: "toast", message: "A área de empresas será conectada a este menu em breve." } },
       { key: "settings", label: "Configurações", icon: "settings-2", action: { type: "toast", message: "As configurações gerais do sistema ficarão centralizadas aqui em breve." } },
       { key: "integrations", label: "Integrações", icon: "plug-zap", action: { type: "toast", message: "As integrações do sistema aparecerão neste menu em breve." } },
@@ -247,6 +240,21 @@ const monthStart = (() => {
   return `${year}-${month}-${day}`;
 })();
 
+const SALES_MONTH_OPTIONS = [
+  { value: "1", label: "Janeiro" },
+  { value: "2", label: "Fevereiro" },
+  { value: "3", label: "Março" },
+  { value: "4", label: "Abril" },
+  { value: "5", label: "Maio" },
+  { value: "6", label: "Junho" },
+  { value: "7", label: "Julho" },
+  { value: "8", label: "Agosto" },
+  { value: "9", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+];
+
 const state = {
   user: null,
   page: "sales",
@@ -353,6 +361,7 @@ const state = {
       day: todayIso(),
       start: monthStart,
       end: todayIso(),
+      specific_month: "",
       search: "",
       payment_method: "",
       page: 1,
@@ -926,20 +935,61 @@ function writeTopAlertSessionState(nextState) {
 }
 
 
+function isFinalizedCheckStatus(status) {
+  return ["Compensado", "Cancelado", "Pago", "Baixado", "Finalizado"].includes(status || "");
+}
+
+
+function getCheckAlertTotals(alert = state.topAlert) {
+  const today = alert?.date || localTodayIso();
+  const checks = Array.isArray(state.data.checks) ? state.data.checks : [];
+  const dueTodayChecks = checks.filter((check) => {
+    const status = check.effective_status || check.status || "";
+    return check.due_date === today && !isFinalizedCheckStatus(status);
+  });
+  const overdueChecks = checks.filter((check) => {
+    const status = check.effective_status || check.status || "";
+    if (isFinalizedCheckStatus(status) || check.due_date === today) {
+      return false;
+    }
+    return status === "Atrasado" || Boolean(check.due_date && check.due_date < today);
+  });
+
+  const fallbackDueTodayTotal = sumBy(dueTodayChecks, (check) => check.amount);
+  const fallbackOverdueTotal = sumBy(overdueChecks, (check) => check.amount);
+  const dueTodayTotal = Math.max(Number(alert?.total_amount || 0), fallbackDueTodayTotal);
+  const overdueTotal = Math.max(Number(alert?.overdue_total_amount || 0), fallbackOverdueTotal);
+  const dueTodayCount = Math.max(Number(alert?.count || 0), dueTodayChecks.length);
+  const overdueCount = Math.max(Number(alert?.overdue_count || 0), overdueChecks.length);
+
+  return {
+    id: alert?.id || `daily-check-alert-${today}-${dueTodayCount}-${overdueCount}-${dueTodayTotal}-${overdueTotal}`,
+    date: today,
+    count: dueTodayCount,
+    total_amount: dueTodayTotal,
+    overdue_count: overdueCount,
+    overdue_total_amount: overdueTotal,
+    has_alert: Boolean(alert?.has_alert) || dueTodayTotal > 0 || overdueTotal > 0,
+  };
+}
+
+
 function buildTopAlert() {
   const alert = state.topAlert;
-  if (!alert?.has_alert || Number(alert.total_amount || 0) <= 0) {
+  const totals = getCheckAlertTotals(alert);
+  if (!totals.has_alert || (totals.total_amount <= 0 && totals.overdue_total_amount <= 0)) {
     return null;
   }
 
   const dismissedIds = new Set(readTopAlertSessionState().dismissedIds);
-  if (dismissedIds.has(alert.id)) {
+  if (dismissedIds.has(totals.id)) {
     return null;
   }
 
   return {
     ...alert,
-    message: `⚠️ Olá ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(alert.total_amount)} de cheque para cair!`,
+    ...totals,
+    message: `⚠️ Olá irmão ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(totals.total_amount)} de cheques para cair hoje, e ${formatMoney(totals.overdue_total_amount)} que já deveriam ter caído!`,
   };
 }
 
@@ -952,7 +1002,7 @@ function renderTopAlert() {
     <section class="top-check-alert" data-alert-id="${escapeHtml(alert.id)}" role="status" aria-live="polite">
       <div class="top-check-alert-copy">
         <strong>${escapeHtml(alert.message)}</strong>
-        <small>${escapeHtml(`${alert.count} cheque(s) previstos para ${formatDate(alert.date)}.`)}</small>
+        <small>${escapeHtml(`${alert.count || 0} cheque(s) previstos para ${formatDate(alert.date)}. ${alert.overdue_count || 0} cheque(s) atrasado(s).`)}</small>
       </div>
       <button
         type="button"
@@ -994,39 +1044,34 @@ function buildNotifications() {
   const dismissedIds = new Set(readNotificationSessionState().dismissedIds);
   const notifications = [];
 
-  const checksDueToday = state.data.checks.filter((check) => (
-    check.due_date === today
-    && !["Compensado", "Cancelado"].includes(check.effective_status || check.status || "")
-  ));
+  const checkAlert = state.topAlert;
+  const checkTotals = getCheckAlertTotals(checkAlert);
+  const todayCheckNotificationId = checkTotals.id || `checks-due-today-${today}`;
 
-  const totalDueToday = sumBy(checksDueToday, (check) => check.amount);
-  const todayCheckNotificationId = `checks-due-today-${today}`;
-
-  if (checksDueToday.length && totalDueToday > 0 && !dismissedIds.has(todayCheckNotificationId)) {
+  if (checkTotals.has_alert && (checkTotals.total_amount > 0 || checkTotals.overdue_total_amount > 0) && !dismissedIds.has(todayCheckNotificationId)) {
     notifications.push({
       id: todayCheckNotificationId,
       tone: "warning",
-      title: "Cheque previsto para hoje",
-      message: `Olá ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(totalDueToday)} de cheque para cair!`,
-      meta: `${checksDueToday.length} cheque(s) com data prevista em ${formatDate(today)}.`,
+      title: "Cheques para acompanhar",
+      message: `Olá irmão ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(checkTotals.total_amount)} de cheques para cair hoje, e ${formatMoney(checkTotals.overdue_total_amount)} que já deveriam ter caído!`,
+      meta: `${checkTotals.count} cheque(s) para ${formatDate(checkTotals.date || today)}. ${checkTotals.overdue_count} cheque(s) atrasado(s).`,
     });
   }
 
   const billAlert = state.data.daily_bill_alert;
   const todayBillNotificationId = billAlert?.id || `bills-due-today-${today}`;
   const dueTodayBillsCount = Number(billAlert?.count || 0);
+  const overdueBillsCount = Number(billAlert?.overdue_count || 0);
   const dueTodayBillsTotal = Number(billAlert?.total_amount || 0);
+  const overdueBillsTotal = Number(billAlert?.overdue_total_amount || 0);
 
-  if (billAlert?.has_alert && dueTodayBillsCount > 0 && dueTodayBillsTotal > 0 && !dismissedIds.has(todayBillNotificationId)) {
-    const isSingleBill = dueTodayBillsCount === 1;
+  if (billAlert?.has_alert && (dueTodayBillsTotal > 0 || overdueBillsTotal > 0) && !dismissedIds.has(todayBillNotificationId)) {
     notifications.push({
       id: todayBillNotificationId,
       tone: "warning",
-      title: isSingleBill ? "Boleto vencendo hoje" : "Boletos vencendo hoje",
-      message: isSingleBill
-        ? `Olá ${NOTIFICATION_GREETING_NAME}, hoje você tem 1 boleto para pagar, no valor de ${formatMoney(dueTodayBillsTotal)}.`
-        : `Olá ${NOTIFICATION_GREETING_NAME}, hoje você tem ${dueTodayBillsCount} boletos para pagar, no total de ${formatMoney(dueTodayBillsTotal)}.`,
-      meta: `${dueTodayBillsCount} boleto(s) com vencimento em ${formatDate(billAlert.date || today)}.`,
+      title: "Boletos para acompanhar",
+      message: `Olá irmão ${NOTIFICATION_GREETING_NAME}, hoje temos ${formatMoney(dueTodayBillsTotal)} de boletos para pagar, e ${formatMoney(overdueBillsTotal)} de boletos que já venceram!`,
+      meta: `${dueTodayBillsCount} boleto(s) para ${formatDate(billAlert.date || today)}. ${overdueBillsCount} boleto(s) vencido(s).`,
     });
   }
 
@@ -1378,16 +1423,10 @@ function setPage(page) {
 
 function renderCurrentPage() {
   const renderMap = {
-    products: renderProductsPage,
-    stock: renderStockPage,
-    customers: renderCustomersPage,
     sales: renderSalesPage,
-    quotes: renderQuotesPage,
-    nfe: renderNfePage,
     expenses: renderExpensesPage,
     bills: renderBillsPage,
     checks: renderChecksPage,
-    reports: renderReportsPage,
   };
 
   const activePage = renderMap[state.page] ? state.page : "sales";
@@ -2027,6 +2066,31 @@ function setFormBusy(form, isBusy) {
 
 
 function getPeriod(scope) {
+  if (scope === "sales" && state.filters.sales.preset === "specific_month" && state.filters.sales.specific_month) {
+    const today = new Date();
+    const selectedMonth = Number(state.filters.sales.specific_month);
+    const year = today.getFullYear();
+    const monthIndex = Math.min(Math.max(selectedMonth, 1), 12) - 1;
+    const start = new Date(year, monthIndex, 1);
+    const end = new Date(year, monthIndex + 1, 0);
+    const toIso = (date) => {
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${date.getFullYear()}-${month}-${day}`;
+    };
+    const monthLabel = SALES_MONTH_OPTIONS.find((item) => item.value === String(selectedMonth))?.label || "Mês específico";
+
+    return {
+      start: toIso(start),
+      end: toIso(end),
+      label: `${monthLabel} de ${year}`,
+    };
+  }
+
+  if (scope === "sales" && state.filters.sales.preset === "specific_month") {
+    return getPresetRange("month", state.filters.sales);
+  }
+
   return getPresetRange(state.filters[scope].preset, state.filters[scope]);
 }
 
@@ -4077,6 +4141,7 @@ function getFilteredSalesCacheKey() {
     filter.day,
     filter.start,
     filter.end,
+    filter.specific_month,
     filter.payment_method,
     String(filter.search || "").trim().toLowerCase(),
     state.data.sales.length,
@@ -4121,11 +4186,6 @@ function getSalesHeaderMetrics() {
   const totalYesterday = sumBy(yesterdaySales, (sale) => sale.total_amount);
   const todayCount = todaySales.length;
   const ticketAverage = todayCount ? totalToday / todayCount : 0;
-  const uniqueCustomers = new Set(
-    todaySales
-      .map((sale) => String(sale.customer_name || "").trim())
-      .filter(Boolean),
-  );
 
   let trendHelper = "Sem base comparativa com ontem";
   if (totalYesterday > 0) {
@@ -4138,7 +4198,6 @@ function getSalesHeaderMetrics() {
     totalToday,
     todayCount,
     ticketAverage,
-    attendedCustomers: uniqueCustomers.size || todayCount,
     trendHelper,
   };
 }
@@ -4258,7 +4317,7 @@ function renderSalesExecutiveHeader() {
     <section class="sales-executive-hero">
       <div class="sales-executive-copy">
         <span class="eyebrow">Resumo comercial</span>
-        <h2>Bem-vindo de volta!</h2>
+        <h2>Bem-vindo de volta! 👋🏼</h2>
         <p>Acompanhe o caixa rápido, o ritmo do dia e os principais indicadores da operação sem sair da aba de vendas.</p>
         <div class="sales-hero-pills">
           <span class="sales-hero-pill">Período ativo: ${escapeHtml(period.label)}</span>
@@ -4279,18 +4338,6 @@ function renderSalesExecutiveHeader() {
           helper: `${formatNumber(metrics.todayCount)} venda(s) no dia`,
           icon: "ticket",
         })}
-        ${renderSalesExecutiveMetric({
-          label: "Clientes atendidos",
-          value: formatNumber(metrics.attendedCustomers),
-          helper: "Baseado nos registros de hoje",
-          icon: "customers",
-        })}
-        ${renderSalesExecutiveMetric({
-          label: "Conversão",
-          value: "--",
-          helper: "Disponível ao integrar atendimentos",
-          icon: "conversion",
-        })}
       </div>
     </section>
   `;
@@ -4303,7 +4350,7 @@ function renderSalesFiltersBar() {
   const salesPaymentMethods = state.data.options.sales_payment_methods?.length
     ? state.data.options.sales_payment_methods
     : state.data.options.payment_methods;
-  const showAdvanced = filter.show_advanced || ["day", "custom"].includes(filter.preset);
+  const showAdvanced = filter.show_advanced || ["day", "custom", "specific_month"].includes(filter.preset);
 
   return `
     <section class="panel toolbar-panel sales-filter-panel" data-filter-scope="sales">
@@ -4317,6 +4364,7 @@ function renderSalesFiltersBar() {
               { value: "yesterday", label: "Ontem" },
               { value: "week", label: "Esta semana" },
               { value: "month", label: "Este mês" },
+              { value: "specific_month", label: "Mês específico" },
               { value: "year", label: "Este ano" },
               { value: "custom", label: "Período personalizado" },
             ].map((item) => `
@@ -4355,6 +4403,17 @@ function renderSalesFiltersBar() {
             <label class="toolbar-field">
               <span>Dia específico</span>
               <input type="date" name="day" value="${escapeHtml(filter.day || localTodayIso())}">
+            </label>
+          ` : ""}
+          ${filter.preset === "specific_month" ? `
+            <label class="toolbar-field sales-filter-specific-month">
+              <span>Mês específico</span>
+              <select name="specific_month">
+                <option value="">Selecione o mês</option>
+                ${SALES_MONTH_OPTIONS.map((month) => `
+                  <option value="${month.value}" ${String(filter.specific_month || "") === month.value ? "selected" : ""}>${month.label}</option>
+                `).join("")}
+              </select>
             </label>
           ` : ""}
           ${filter.preset === "custom" ? `
@@ -6045,55 +6104,57 @@ function renderSalesPage() {
   const draftAmount = editing?.total_amount || editing?.amount || 0;
 
   return `
-    ${renderSalesExecutiveHeader()}
+    <div class="sales-page-compact">
+      ${renderSalesExecutiveHeader()}
 
-    ${renderSalesFiltersBar()}
+      ${renderSalesFiltersBar()}
 
-    <div data-search-results-scope="sales" data-search-results-part="metrics">${renderSalesMetricsSection()}</div>
+      <div data-search-results-scope="sales" data-search-results-part="metrics">${renderSalesMetricsSection()}</div>
 
-    <section class="page-grid page-grid-2 sales-main-grid">
-      <article class="panel sales-form-card">
-        <div class="section-header">
-          <div>
-            <h3>${editing ? "Editar venda rápida" : "Nova venda rápida"}</h3>
-            <p>${editing ? "Atualize o lançamento selecionado mantendo o fluxo simples do caixa." : "Preencha valor, pagamento, data e hora para registrar uma venda em poucos segundos."}</p>
+      <section class="page-grid page-grid-2 sales-main-grid">
+        <article class="panel sales-form-card">
+          <div class="section-header">
+            <div>
+              <h3>${editing ? "Editar venda rápida" : "Nova venda rápida"}</h3>
+              <p>${editing ? "Atualize o lançamento selecionado mantendo o fluxo simples do caixa." : "Preencha valor, pagamento, data e hora para registrar uma venda em poucos segundos."}</p>
+            </div>
+            <span class="sales-section-chip">${escapeHtml(period.label)}</span>
           </div>
-          <span class="sales-section-chip">${escapeHtml(period.label)}</span>
-        </div>
-        <form id="sales-form" class="form-grid quick-sale-form">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
-          ${renderFormFeedback("sales")}
-          <label class="field-span-2 quick-sale-amount sales-amount-field">
-            <span>Valor da venda</span>
-            ${renderMoneyInput({ name: "amount", value: draftAmount, required: true, classes: "money-input-large" })}
-          </label>
-          <label class="sales-payment-field">
-            <span>Meio de pagamento</span>
-            <select name="payment_method" required>
-              ${renderPaymentOptions(selectedPaymentMethod, salesPaymentMethods)}
-            </select>
-          </label>
-          <div class="field-span-2 quick-sale-meta">
-            <label>
-              <span>Data da venda</span>
-              <input type="date" name="sale_date" value="${currentDate}" required>
+          <form id="sales-form" class="form-grid quick-sale-form">
+            <input type="hidden" name="id" value="${editing?.id ?? ""}">
+            ${renderFormFeedback("sales")}
+            <label class="field-span-2 quick-sale-amount sales-amount-field">
+              <span>Valor da venda</span>
+              ${renderMoneyInput({ name: "amount", value: draftAmount, required: true, classes: "money-input-large" })}
             </label>
-            <label>
-              <span>Hora da venda</span>
-              <input type="time" name="sale_time" value="${currentTime}" step="60" required>
+            <label class="sales-payment-field">
+              <span>Meio de pagamento</span>
+              <select name="payment_method" required>
+                ${renderPaymentOptions(selectedPaymentMethod, salesPaymentMethods)}
+              </select>
             </label>
-          </div>
+            <div class="field-span-2 quick-sale-meta">
+              <label>
+                <span>Data da venda</span>
+                <input type="date" name="sale_date" value="${currentDate}" required>
+              </label>
+              <label>
+                <span>Hora da venda</span>
+                <input type="time" name="sale_time" value="${currentTime}" step="60" required>
+              </label>
+            </div>
 
-          <div class="form-actions field-span-2">
-            <button type="submit" class="btn btn-primary">${editing ? "Salvar venda" : "Registrar venda"}</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-sales-form">Limpar formulário</button>
-          </div>
-        </form>
-      </article>
-      <div data-search-results-scope="sales" data-search-results-part="history">${renderSalesHistoryPanel()}</div>
-    </section>
+            <div class="form-actions field-span-2">
+              <button type="submit" class="btn btn-primary">${editing ? "Salvar venda" : "Registrar venda"}</button>
+              <button type="button" class="btn btn-secondary" data-action="clear-sales-form">Limpar formulário</button>
+            </div>
+          </form>
+        </article>
+        <div data-search-results-scope="sales" data-search-results-part="history">${renderSalesHistoryPanel()}</div>
+      </section>
 
-    <div data-search-results-scope="sales" data-search-results-part="insights">${renderSalesInsightsSection()}</div>
+      <div data-search-results-scope="sales" data-search-results-part="insights">${renderSalesInsightsSection()}</div>
+    </div>
   `;
 }
 
@@ -8050,4 +8111,66 @@ function exportReport() {
   showToast("Relatório exportado em CSV.");
 }
 
+// ===== AUTO ATUALIZAÇÃO DA HORA DA VENDA =====
+(function () {
+  let intervaloHoraVenda = null;
+  let usuarioAlterouHoraVenda = false;
+  let campoHoraAtual = null;
 
+  function horaAtualHHMM() {
+    const agora = new Date();
+    const h = String(agora.getHours()).padStart(2, "0");
+    const m = String(agora.getMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
+  }
+
+  function encontrarCampoHoraVenda() {
+    return (
+      document.querySelector('#sales-form input[type="time"]') ||
+      document.querySelector('input[name="sale_time"]') ||
+      document.querySelector('input[name="time"]') ||
+      document.querySelector('input[type="time"]')
+    );
+  }
+
+  function atualizarHoraVenda() {
+    const campo = encontrarCampoHoraVenda();
+
+    if (!campo) return;
+
+    if (campoHoraAtual !== campo) {
+      campoHoraAtual = campo;
+      usuarioAlterouHoraVenda = false;
+
+      campo.addEventListener("input", () => {
+        usuarioAlterouHoraVenda = true;
+      });
+    }
+
+    if (!usuarioAlterouHoraVenda) {
+      campo.value = horaAtualHHMM();
+    }
+  }
+
+  function iniciarRelogioVenda() {
+    if (intervaloHoraVenda) {
+      clearInterval(intervaloHoraVenda);
+    }
+
+    atualizarHoraVenda();
+    intervaloHoraVenda = setInterval(atualizarHoraVenda, 10000);
+  }
+
+  document.addEventListener("DOMContentLoaded", iniciarRelogioVenda);
+
+  const observador = new MutationObserver(() => {
+    atualizarHoraVenda();
+  });
+
+  observador.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  iniciarRelogioVenda();
+})();

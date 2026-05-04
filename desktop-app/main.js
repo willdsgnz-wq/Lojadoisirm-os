@@ -344,6 +344,12 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     if (mainWindow) {
       mainWindow.show();
+
+      // 🔥 AQUI ESTÁ O AJUSTE DE ZOOM
+      mainWindow.webContents.setZoomFactor(0.8);
+
+      // 🔒 (opcional) trava o zoom pra ninguém mudar
+      mainWindow.webContents.setVisualZoomLevelLimits(1, 1);
     }
   });
 
