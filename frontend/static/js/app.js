@@ -34,6 +34,7 @@ const SIDEBAR_MOBILE_QUERY = window.matchMedia("(max-width: 960px)");
 
 const pageTitles = {
   sales: "Vendas",
+  missing_items: "Itens Faltantes",
   expenses: "Contas Pagas",
   bills: "Boletos",
   checks: "Cheques",
@@ -285,6 +286,7 @@ const state = {
     products: [],
     customers: [],
     sales: [],
+    missing_items: [],
     quotes: [],
     expenses: [],
     bills: [],
@@ -315,6 +317,7 @@ const state = {
     products: null,
     customers: null,
     sales: null,
+    missing_items: null,
     quotes: null,
     expenses: null,
     bills: null,
@@ -329,6 +332,7 @@ const state = {
     stock: null,
     customers: null,
     sales: null,
+    missing_items: null,
     quotes: null,
     expenses: null,
     bills: null,
@@ -367,6 +371,7 @@ const state = {
       page: 1,
       show_advanced: false,
     },
+    missing_items: { search: "" },
     quotes: { search: "", status: "" },
     nfe: { search: "", sale_id: "" },
     expenses: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
@@ -387,6 +392,7 @@ const formScopeMap = {
   "stock-form": "stock",
   "customers-form": "customers",
   "sales-form": "sales",
+  "missing-items-form": "missing_items",
   "quotes-form": "quotes",
   "expenses-form": "expenses",
   "bills-form": "bills",
@@ -1394,6 +1400,7 @@ async function loadData() {
     products: payload.products || [],
     customers: payload.customers || [],
     sales: payload.sales || [],
+    missing_items: payload.missing_items || [],
     quotes: payload.quotes || [],
     expenses: payload.expenses || [],
     bills: payload.bills || [],
@@ -1424,6 +1431,7 @@ function setPage(page) {
 function renderCurrentPage() {
   const renderMap = {
     sales: renderSalesPage,
+    missing_items: renderMissingItemsPage,
     expenses: renderExpensesPage,
     bills: renderBillsPage,
     checks: renderChecksPage,
@@ -1490,6 +1498,9 @@ function getSearchResultsMarkup(scope, part = "default") {
     },
     customers: {
       default: renderCustomersListResults,
+    },
+    missing_items: {
+      default: renderMissingItemsListResults,
     },
     sales: {
       metrics: renderSalesMetricsSection,
@@ -2040,6 +2051,12 @@ function validateSimplePayload(scope, payload) {
     }
     if (!isValidNumber(payload.amount, { min: 0.01, allowZero: false })) {
       throw new Error("Informe um valor válido para o boleto.");
+    }
+  }
+
+  if (scope === "missing_items") {
+    if (!payload.name) {
+      throw new Error("Informe o nome do item faltante.");
     }
   }
 
@@ -6790,6 +6807,104 @@ function renderQuotesPage() {
 }
 
 
+function getFilteredMissingItems() {
+  const search = String(state.filters.missing_items.search || "").trim().toLowerCase();
+  const items = [...state.data.missing_items];
+  if (!search) {
+    return items;
+  }
+  return items.filter((item) => String(item.name || "").toLowerCase().includes(search));
+}
+
+
+function renderMissingItemsListResults() {
+  const items = getFilteredMissingItems();
+
+  return items.length ? `
+    <div class="table-wrapper missing-items-table-wrapper">
+      <table class="data-table missing-items-table">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Chegou</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => `
+            <tr>
+              <td><strong>${escapeHtml(item.name)}</strong></td>
+              <td>
+                <label class="inline-check-field">
+                  <input type="checkbox" data-action="mark-missing-item-arrived" data-id="${item.id}">
+                  <span>Chegou</span>
+                </label>
+              </td>
+              <td>
+                <button type="button" class="table-action danger" data-action="delete-missing-item" data-id="${item.id}">Excluir</button>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  ` : renderEmptyState("Nenhum item faltante encontrado", "Adicione um item ou ajuste a busca pelo nome.");
+}
+
+
+function renderMissingItemsPage() {
+  return `
+    ${renderHero(
+      "Itens Faltantes",
+      "Cadastre rapidamente itens que precisam ser repostos e marque como chegou quando forem encontrados ou entregues.",
+    )}
+
+    <section class="page-grid page-grid-2 missing-items-page-grid">
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>Novo item faltante</h3>
+            <p>Informe somente o nome do item. Nada além disso será salvo no banco.</p>
+          </div>
+        </div>
+        <form id="missing-items-form" class="form-grid">
+          ${renderFormFeedback("missing_items")}
+          <label class="field-span-2">
+            <span>Nome do item</span>
+            <input
+              type="text"
+              name="name"
+              required
+              placeholder="Ex: Cimento, Areia, Cano 100mm, Argamassa..."
+              autocomplete="off"
+            >
+          </label>
+          <div class="form-actions field-span-2">
+            <button type="submit" class="btn btn-primary">Adicionar item</button>
+          </div>
+        </form>
+      </article>
+
+      <article class="panel">
+        <div class="section-header">
+          <div>
+            <h3>Lista de itens faltantes</h3>
+            <p>${state.data.missing_items.length} item(ns) aguardando chegada.</p>
+          </div>
+        </div>
+        <section class="toolbar-panel missing-items-search-panel" data-filter-scope="missing_items">
+          <label class="toolbar-field toolbar-search">
+            <span>Buscar item</span>
+            <input type="search" name="search" value="${escapeHtml(state.filters.missing_items.search || "")}" placeholder="Buscar item">
+          </label>
+        </section>
+        <div data-search-results-scope="missing_items">${renderMissingItemsListResults()}</div>
+      </article>
+    </section>
+  `;
+}
+
+
 function renderExpensesPage() {
   const editing = state.editing.expenses;
 
@@ -7159,6 +7274,7 @@ async function handlePageSubmit(event) {
     "stock-form": () => submitStockForm(form),
     "customers-form": () => submitSimpleForm(form, "customers"),
     "sales-form": () => submitSalesForm(form),
+    "missing-items-form": () => submitMissingItemsForm(form),
     "quotes-form": () => submitQuotesForm(form),
     "expenses-form": () => submitSimpleForm(form, "expenses"),
     "bills-form": () => submitSimpleForm(form, "bills"),
@@ -7456,6 +7572,7 @@ function handlePageClick(event) {
     "delete-quote": () => deleteEntity("quotes", id, "orçamento"),
     "delete-expense": () => deleteEntity("expenses", id, "conta paga"),
     "delete-bill": () => deleteEntity("bills", id, "boleto"),
+    "delete-missing-item": () => deleteMissingItem(id),
     "delete-check": () => deleteEntity("checks", id, "cheque"),
     "print-quote": () => openQuoteOutput(id, "print"),
     "pdf-quote": () => openQuoteOutput(id, "pdf"),
@@ -7525,6 +7642,11 @@ function handlePageChange(event) {
 
   if (target instanceof HTMLInputElement && target.dataset.action === "toggle-bill-paid") {
     void toggleBillPaid(target.dataset.id, target.checked);
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.dataset.action === "mark-missing-item-arrived") {
+    void markMissingItemArrived(target.dataset.id);
     return;
   }
 
@@ -7783,6 +7905,23 @@ async function deleteEntity(scope, id, label) {
 }
 
 
+async function deleteMissingItem(id) {
+  if (!window.confirm("Tem certeza que deseja excluir este item faltante?")) {
+    return;
+  }
+
+  try {
+    await api.remove("missing-items", id);
+    state.editing.missing_items = null;
+    clearFormFeedback("missing_items");
+    await loadData();
+    showToast("Item faltante excluído com sucesso.");
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+
 async function toggleBillPaid(id, isPaid) {
   if (!id) return;
 
@@ -7797,6 +7936,53 @@ async function toggleBillPaid(id, isPaid) {
   } catch (error) {
     showToast(error.message, "error");
     await loadData();
+  }
+}
+
+
+async function markMissingItemArrived(id) {
+  if (!id) return;
+  if (!window.confirm("Confirmar que este item chegou?")) {
+    await loadData();
+    return;
+  }
+
+  try {
+    await api.remove("missing-items", id);
+    state.editing.missing_items = null;
+    clearFormFeedback("missing_items");
+    await loadData();
+    showToast("Item removido da lista de faltantes.");
+  } catch (error) {
+    showToast(error.message, "error");
+    await loadData();
+  }
+}
+
+
+async function submitMissingItemsForm(form) {
+  const payload = normalizePayload(Object.fromEntries(new FormData(form).entries()));
+  const name = String(payload.name || "").trim();
+
+  if (!name) {
+    const message = "Informe o nome do item faltante.";
+    updateFormFeedback("missing_items", form, message, "error");
+    showToast(message, "error");
+    return;
+  }
+
+  setFormBusy(form, true);
+  try {
+    await api.post("/api/missing-items", { name });
+    setFormFeedback("missing_items", "Item faltante cadastrado com sucesso.", "success");
+    showToast("Item faltante cadastrado com sucesso.");
+    state.editing.missing_items = null;
+    await loadData();
+  } catch (error) {
+    updateFormFeedback("missing_items", form, error.message, "error");
+    showToast(error.message, "error");
+  } finally {
+    setFormBusy(form, false);
   }
 }
 

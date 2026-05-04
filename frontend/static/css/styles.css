@@ -3106,12 +3106,19 @@ button.nfe-flow-dashboard-step {
   transition: background 0.18s ease;
 }
 
-.data-table tbody tr:nth-child(even) {
-  background: rgba(248, 250, 252, 0.9);
+.data-table tbody tr:nth-child(odd),
+.data-table tbody tr:nth-child(odd) > td {
+  background: #ffffff;
 }
 
-.data-table tbody tr:hover {
-  background: rgba(219, 234, 254, 0.48);
+.data-table tbody tr:nth-child(even),
+.data-table tbody tr:nth-child(even) > td {
+  background: #f3f6fb;
+}
+
+.data-table tbody tr:hover,
+.data-table tbody tr:hover > td {
+  background: #eef4ff;
 }
 
 .data-table tbody tr:last-child td {
@@ -3173,7 +3180,17 @@ button.nfe-flow-dashboard-step {
   background: rgba(254, 226, 226, 0.74);
 }
 
+.data-table tbody tr.row-danger,
+.data-table tbody tr.row-danger > td {
+  background: rgba(254, 226, 226, 0.74);
+}
+
 .row-warning {
+  background: rgba(255, 237, 213, 0.78);
+}
+
+.data-table tbody tr.row-warning,
+.data-table tbody tr.row-warning > td {
   background: rgba(255, 237, 213, 0.78);
 }
 
@@ -3305,7 +3322,15 @@ button.nfe-flow-dashboard-step {
   align-items: center;
   padding: 14px 16px;
   border-radius: 18px;
-  background: rgba(22, 43, 51, 0.04);
+  background: #ffffff;
+}
+
+.stat-list .stat-row:nth-child(even) {
+  background: #f3f6fb;
+}
+
+.stat-list .stat-row:hover {
+  background: #eef4ff;
 }
 
 .stat-row small {
@@ -5106,11 +5131,11 @@ button.nfe-flow-dashboard-step {
 }
 
 .products-data-table tbody tr:nth-child(even) {
-  background: rgba(248, 250, 252, 0.62);
+  background: #f3f6fb;
 }
 
 .products-data-table tbody tr:hover {
-  background: rgba(219, 234, 254, 0.32);
+  background: #eef4ff;
 }
 
 .products-data-table td {

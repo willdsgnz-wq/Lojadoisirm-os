@@ -165,6 +165,12 @@ def initialize_database() -> None:
 def run_runtime_migrations() -> None:
     statements = [
         """
+        CREATE TABLE IF NOT EXISTS missing_items (
+            id BIGSERIAL PRIMARY KEY,
+            name TEXT NOT NULL
+        )
+        """,
+        """
         ALTER TABLE IF EXISTS quotes
         ADD COLUMN IF NOT EXISTS customer_name_manual TEXT
         """,

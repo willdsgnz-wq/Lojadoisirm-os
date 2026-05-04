@@ -1927,6 +1927,77 @@ def delete_bill(bill_id: int) -> None:
         raise ServiceError("Boleto nÃ£o encontrado.", 404)
 
 
+def _serialize_missing_item_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "name": row["name"],
+    }
+
+
+def list_missing_items() -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, name
+            FROM missing_items
+            ORDER BY id DESC
+            """
+        ).fetchall()
+    return [_serialize_missing_item_row(dict(row)) for row in rows]
+
+
+def get_missing_item(item_id: int) -> dict[str, Any]:
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, name
+            FROM missing_items
+            WHERE id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+    if not row:
+        raise ServiceError("Item faltante nÃ£o encontrado.", 404)
+    return _serialize_missing_item_row(dict(row))
+
+
+def create_missing_item(payload: dict[str, Any]) -> dict[str, Any]:
+    name = _require_text(payload.get("name"), "name")
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO missing_items (name)
+            VALUES (?)
+            """,
+            (name,),
+        )
+        item_id = cursor.lastrowid
+    return get_missing_item(item_id)
+
+
+def update_missing_item(item_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    name = _require_text(payload.get("name"), "name")
+    with get_connection() as connection:
+        updated = connection.execute(
+            """
+            UPDATE missing_items
+            SET name = ?
+            WHERE id = ?
+            """,
+            (name, item_id),
+        ).rowcount
+    if not updated:
+        raise ServiceError("Item faltante nÃ£o encontrado.", 404)
+    return get_missing_item(item_id)
+
+
+def delete_missing_item(item_id: int) -> None:
+    with get_connection() as connection:
+        deleted = connection.execute("DELETE FROM missing_items WHERE id = ?", (item_id,)).rowcount
+    if not deleted:
+        raise ServiceError("Item faltante nÃ£o encontrado.", 404)
+
+
 def list_checks() -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
@@ -2737,6 +2808,7 @@ def get_bootstrap_data() -> dict[str, Any]:
         "quotes": list_quotes(),
         "expenses": list_expenses(),
         "bills": list_bills(),
+        "missing_items": list_missing_items(),
         "checks": list_checks(),
         "stock_overview": get_stock_overview(),
         "nfe_issued": list_nfe_issued(),

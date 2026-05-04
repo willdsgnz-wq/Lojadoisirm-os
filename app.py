@@ -54,6 +54,8 @@ ENTITY_HANDLERS: dict[str, tuple[CollectionGetter, CollectionCreator, ItemUpdate
     "quotes": (services.list_quotes, services.create_quote, services.update_quote, services.delete_quote),
     "expenses": (services.list_expenses, services.create_expense, services.update_expense, services.delete_expense),
     "bills": (services.list_bills, services.create_bill, services.update_bill, services.delete_bill),
+    "missing_items": (services.list_missing_items, services.create_missing_item, services.update_missing_item, services.delete_missing_item),
+    "missing-items": (services.list_missing_items, services.create_missing_item, services.update_missing_item, services.delete_missing_item),
     "checks": (services.list_checks, services.create_check, services.update_check, services.delete_check),
 }
 
@@ -326,6 +328,33 @@ def nfe_new_page() -> Response:
     if not _current_user():
         return _serve_frontend("")
     return _serve_frontend_file(FRONTEND_DIR / "nfe-nova.html")
+
+
+@app.route("/api/missing-items", methods=["GET", "POST"])
+@app.route("/api/missing_items", methods=["GET", "POST"])
+def api_missing_items_collection() -> Response:
+    _require_user()
+
+    if request.method == "GET":
+        return _json_response({"items": services.list_missing_items()})
+
+    payload = request.get_json(silent=True) or {}
+    item = services.create_missing_item(payload)
+    return _json_response({"item": item, "message": "Item faltante cadastrado com sucesso."}, 201)
+
+
+@app.route("/api/missing-items/<int:item_id>", methods=["PUT", "DELETE"])
+@app.route("/api/missing_items/<int:item_id>", methods=["PUT", "DELETE"])
+def api_missing_items_item(item_id: int) -> Response:
+    _require_user()
+
+    if request.method == "PUT":
+        payload = request.get_json(silent=True) or {}
+        item = services.update_missing_item(item_id, payload)
+        return _json_response({"item": item, "message": "Item faltante atualizado com sucesso."})
+
+    services.delete_missing_item(item_id)
+    return _json_response({"message": "Item faltante excluído com sucesso."})
 
 
 @app.route("/api/<entity>", methods=["GET", "POST"])

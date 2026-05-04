@@ -180,6 +180,14 @@ CREATE TABLE IF NOT EXISTS bills (
 );
 
 -- =========================
+-- MISSING ITEMS
+-- =========================
+CREATE TABLE IF NOT EXISTS missing_items (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+-- =========================
 -- STOCK MOVEMENTS
 -- =========================
 CREATE TABLE IF NOT EXISTS stock_movements (
