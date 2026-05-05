@@ -3156,6 +3156,24 @@ button.nfe-flow-dashboard-step {
   accent-color: var(--accent);
 }
 
+.check-compensated-toggle {
+  justify-content: center;
+  min-width: 84px;
+}
+
+.check-compensated-toggle span {
+  min-width: 20px;
+  color: #166534;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.check-compensated-toggle.is-complete input {
+  accent-color: #22c55e;
+}
+
 .table-action {
   display: inline-flex;
   align-items: center;

@@ -4810,6 +4810,24 @@ function renderBillPaidToggle(bill) {
 }
 
 
+function renderCheckCompensatedToggle(check) {
+  const isCompensated = check.effective_status === "Compensado" || check.status === "Compensado";
+  const isLocked = isCompensated || check.status === "Cancelado";
+  return `
+    <label class="table-paid-toggle check-compensated-toggle ${isCompensated ? "is-complete" : ""}">
+      <input
+        type="checkbox"
+        data-action="toggle-check-compensated"
+        data-id="${check.id}"
+        ${isCompensated ? "checked" : ""}
+        ${isLocked ? "disabled" : ""}
+      >
+      <span>${isCompensated ? "OK" : ""}</span>
+    </label>
+  `;
+}
+
+
 function renderBillsMetricsSection() {
   const { filteredBills, pendingBills, paidBills, dueTodayBills, overdueBills } = getFilteredBillsData();
   const metrics = [
@@ -5017,6 +5035,7 @@ function renderChecksListPanel() {
                 <th>Emissão</th>
                 <th>Previsto</th>
                 <th>Status</th>
+                <th>Compensado</th>
                 <th>Dias</th>
                 <th></th>
               </tr>
@@ -5030,6 +5049,7 @@ function renderChecksListPanel() {
                   <td>${formatDate(check.issue_date)}</td>
                   <td>${formatDate(check.due_date)}</td>
                   <td>${renderBadge(check.effective_status, statusTone(check.effective_status))}</td>
+                  <td>${renderCheckCompensatedToggle(check)}</td>
                   <td>
                     <small>Pendente: ${formatNumber(check.days_pending)}</small><br>
                     <small>Atraso: ${formatNumber(check.days_overdue)}</small>
@@ -7060,7 +7080,6 @@ function renderChecksPage() {
         <label><span>Data de emissão</span><input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required></label>
         <label><span>Data prevista</span><input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required></label>
         <label><span>Status</span><select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select></label>
-        <label class="field-span-2"><span>Observações</span><textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea></label>
         <div class="form-actions field-span-2">
           <button type="submit" class="btn btn-primary">${editing ? "Salvar cheque" : "Cadastrar cheque"}</button>
           <button type="button" class="btn btn-secondary" data-action="clear-checks-form">Limpar formulário</button>
@@ -7645,6 +7664,11 @@ function handlePageChange(event) {
     return;
   }
 
+  if (target instanceof HTMLInputElement && target.dataset.action === "toggle-check-compensated") {
+    void toggleCheckCompensated(target.dataset.id, target.checked, target);
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.dataset.action === "mark-missing-item-arrived") {
     void markMissingItemArrived(target.dataset.id);
     return;
@@ -7934,6 +7958,41 @@ async function toggleBillPaid(id, isPaid) {
     await loadData();
     showToast(isPaid ? "Boleto marcado como pago." : "Boleto voltou para pendente.");
   } catch (error) {
+    showToast(error.message, "error");
+    await loadData();
+  }
+}
+
+
+async function toggleCheckCompensated(id, isCompensated, input = null) {
+  if (!id) return;
+  if (!isCompensated) {
+    if (input instanceof HTMLInputElement) {
+      input.checked = false;
+    }
+    return;
+  }
+
+  const confirmed = window.confirm("Confirmar que este cheque foi compensado?");
+  if (!confirmed) {
+    if (input instanceof HTMLInputElement) {
+      input.checked = false;
+    }
+    return;
+  }
+
+  try {
+    await api.update("checks", id, { status: "Compensado" });
+    if (state.editing.checks && String(state.editing.checks.id) === String(id)) {
+      state.editing.checks = null;
+    }
+    clearFormFeedback("checks");
+    await loadData();
+    showToast("Cheque marcado como compensado com sucesso.");
+  } catch (error) {
+    if (input instanceof HTMLInputElement) {
+      input.checked = false;
+    }
     showToast(error.message, "error");
     await loadData();
   }
