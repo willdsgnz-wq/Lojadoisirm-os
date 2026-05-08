@@ -376,7 +376,7 @@ const state = {
     nfe: { search: "", sale_id: "" },
     expenses: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
     bills: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
-    checks: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
+    checks: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "", quick_filter: "all" },
     reports: { module: "sales", preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
   },
 };
@@ -4292,20 +4292,63 @@ function renderSalesIcon(name) {
         <path d="M4 7h16M7 12h10M10 17h4" />
       </svg>
     `,
+    quick_sale: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M13 3 6 14h5l-1 7 8-12h-5l1-6Z" />
+      </svg>
+    `,
+    history: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5" y="4.5" width="14" height="15" rx="2" />
+        <path d="M8.5 2.5v4M15.5 2.5v4M8.5 10h7M8.5 13.5h7M8.5 17h4" />
+      </svg>
+    `,
+    calendar: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5.5" width="15" height="14" rx="2" />
+        <path d="M8 3.5v4M16 3.5v4M4.5 9.5h15" />
+      </svg>
+    `,
+    clock: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.5v5l3.5 2" />
+      </svg>
+    `,
+    refresh: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20 11a8 8 0 1 0-2.34 5.66" />
+        <path d="M20 4v7h-7" />
+      </svg>
+    `,
+    payment: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3.5" y="6" width="17" height="12" rx="2" />
+        <path d="M3.5 10h17M7 14.5h3M14.5 14.5h2.5" />
+      </svg>
+    `,
+    search: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="11" cy="11" r="6.5" />
+        <path d="m16 16 4.5 4.5" />
+      </svg>
+    `,
   };
   return icons[name] || icons.revenue;
 }
 
 
-function renderSalesExecutiveMetric({ label, value, helper, icon }) {
+function renderSalesExecutiveMetric({ label, value, helper, icon, tone = "default", helperTone = "default" }) {
   return `
-    <article class="sales-kpi-card">
+    <article class="sales-kpi-card sales-kpi-${tone}">
       <div class="sales-kpi-card-top">
-        <span class="sales-kpi-label">${escapeHtml(label)}</span>
         <span class="sales-kpi-icon" aria-hidden="true">${renderSalesIcon(icon)}</span>
+        <div class="sales-kpi-card-copy">
+          <span class="sales-kpi-label">${escapeHtml(label)}</span>
+          <strong class="sales-kpi-value">${escapeHtml(String(value))}</strong>
+        </div>
       </div>
-      <strong class="sales-kpi-value">${escapeHtml(String(value))}</strong>
-      <small class="sales-kpi-helper">${escapeHtml(helper)}</small>
+      <small class="sales-kpi-helper sales-kpi-helper-${helperTone}">${escapeHtml(helper)}</small>
     </article>
   `;
 }
@@ -4314,12 +4357,12 @@ function renderSalesExecutiveMetric({ label, value, helper, icon }) {
 function renderSalesSummaryCard({ label, value, helper, icon, tone = "default" }) {
   return `
     <article class="sales-summary-card sales-summary-${tone}">
+      <div class="sales-summary-icon" aria-hidden="true">${renderSalesIcon(icon)}</div>
       <div class="sales-summary-copy">
         <span>${escapeHtml(label)}</span>
         <strong>${escapeHtml(String(value))}</strong>
         <small>${escapeHtml(helper)}</small>
       </div>
-      <div class="sales-summary-icon" aria-hidden="true">${renderSalesIcon(icon)}</div>
     </article>
   `;
 }
@@ -4328,7 +4371,6 @@ function renderSalesSummaryCard({ label, value, helper, icon, tone = "default" }
 function renderSalesExecutiveHeader() {
   const { period } = getFilteredSalesData();
   const metrics = getSalesHeaderMetrics();
-  const todayLabel = formatDate(localTodayIso());
 
   return `
     <section class="sales-executive-hero">
@@ -4337,9 +4379,8 @@ function renderSalesExecutiveHeader() {
         <h2>Bem-vindo de volta! 👋🏼</h2>
         <p>Acompanhe o caixa rápido, o ritmo do dia e os principais indicadores da operação sem sair da aba de vendas.</p>
         <div class="sales-hero-pills">
-          <span class="sales-hero-pill">Período ativo: ${escapeHtml(period.label)}</span>
-          <span class="sales-hero-pill">Hoje: ${escapeHtml(todayLabel)}</span>
-          <span class="sales-hero-pill">Lançamento rápido no balcão</span>
+          <span class="sales-hero-pill"><span aria-hidden="true">${renderSalesIcon("calendar")}</span>Período ativo: ${escapeHtml(period.label)}</span>
+          <span class="sales-hero-pill"><span aria-hidden="true">${renderSalesIcon("refresh")}</span>Atualizado agora</span>
         </div>
       </div>
       <div class="sales-kpi-strip">
@@ -4348,12 +4389,16 @@ function renderSalesExecutiveHeader() {
           value: formatMoney(metrics.totalToday),
           helper: metrics.trendHelper,
           icon: "revenue",
+          tone: "revenue",
+          helperTone: "alert",
         })}
         ${renderSalesExecutiveMetric({
           label: "Ticket médio",
           value: formatMoney(metrics.ticketAverage),
           helper: `${formatNumber(metrics.todayCount)} venda(s) no dia`,
           icon: "ticket",
+          tone: "ticket",
+          helperTone: "soft",
         })}
       </div>
     </section>
@@ -4374,33 +4419,42 @@ function renderSalesFiltersBar() {
       <div class="sales-filter-row">
         <label class="toolbar-field sales-filter-period">
           <span>Período</span>
-          <select name="preset">
-            ${[
-              { value: "today", label: "Hoje" },
-              { value: "day", label: "Dia específico" },
-              { value: "yesterday", label: "Ontem" },
-              { value: "week", label: "Esta semana" },
-              { value: "month", label: "Este mês" },
-              { value: "specific_month", label: "Mês específico" },
-              { value: "year", label: "Este ano" },
-              { value: "custom", label: "Período personalizado" },
-            ].map((item) => `
-              <option value="${item.value}" ${filter.preset === item.value ? "selected" : ""}>${item.label}</option>
-            `).join("")}
-          </select>
+          <div class="sales-filter-control">
+            <span class="sales-filter-field-icon" aria-hidden="true">${renderSalesIcon("calendar")}</span>
+            <select name="preset">
+              ${[
+                { value: "today", label: "Hoje" },
+                { value: "day", label: "Dia específico" },
+                { value: "yesterday", label: "Ontem" },
+                { value: "week", label: "Esta semana" },
+                { value: "month", label: "Este mês" },
+                { value: "specific_month", label: "Mês específico" },
+                { value: "year", label: "Este ano" },
+                { value: "custom", label: "Período personalizado" },
+              ].map((item) => `
+                <option value="${item.value}" ${filter.preset === item.value ? "selected" : ""}>${item.label}</option>
+              `).join("")}
+            </select>
+          </div>
         </label>
 
         <label class="toolbar-field toolbar-search sales-filter-search">
           <span>Buscar</span>
-          <input type="search" name="search" value="${escapeHtml(filter.search || "")}" placeholder="Buscar por pagamento, horário, período ou observação">
+          <div class="sales-filter-control">
+            <span class="sales-filter-field-icon" aria-hidden="true">${renderSalesIcon("search")}</span>
+            <input type="search" name="search" value="${escapeHtml(filter.search || "")}" placeholder="Buscar por pagamento, horário, período ou observação">
+          </div>
         </label>
 
         <label class="toolbar-field sales-filter-payment">
           <span>Forma de pagamento</span>
-          <select name="payment_method">
-            <option value="">Todas</option>
-            ${renderPaymentOptions(filter.payment_method || "", salesPaymentMethods)}
-          </select>
+          <div class="sales-filter-control">
+            <span class="sales-filter-field-icon" aria-hidden="true">${renderSalesIcon("payment")}</span>
+            <select name="payment_method">
+              <option value="">Todas</option>
+              ${renderPaymentOptions(filter.payment_method || "", salesPaymentMethods)}
+            </select>
+          </div>
         </label>
 
         <button
@@ -4513,9 +4567,12 @@ function renderSalesHistoryPanel() {
   return `
     <article class="panel sales-history-card">
       <div class="section-header sales-history-header">
-        <div>
+        <div class="sales-section-heading-wrap">
+          <span class="sales-section-heading-icon sales-section-heading-icon-history" aria-hidden="true">${renderSalesIcon("history")}</span>
+          <div>
           <h3>Histórico de vendas</h3>
           <p>${sales.length} registro(s) encontrados em ${period.label.toLowerCase()}.</p>
+          </div>
         </div>
         <button type="button" class="btn btn-secondary btn-compact sales-history-link" data-action="show-all-sales-history">Ver todas</button>
       </div>
@@ -4961,53 +5018,263 @@ function renderBillsListPanel() {
 }
 
 
-function getFilteredChecksData() {
-  const period = getPeriod("checks");
-  const checksInPeriod = filterByPeriod(state.data.checks, "due_date", period);
-  let filteredChecks = [...checksInPeriod];
-  filteredChecks = getSimpleSearchRecords(filteredChecks, ["check_number", "beneficiary", "notes"], state.filters.checks.search);
-  if (state.filters.checks.status) {
-    filteredChecks = filteredChecks.filter((check) => check.effective_status === state.filters.checks.status || check.status === state.filters.checks.status);
+const CHECK_QUICK_FILTERS = [
+  { value: "all", label: "Todos" },
+  { value: "due_today", label: "Vencendo hoje" },
+  { value: "future_pending", label: "Pendentes futuros" },
+  { value: "overdue", label: "Atrasados" },
+  { value: "compensated", label: "Compensados" },
+  { value: "payable", label: "A pagar" },
+];
+
+
+function normalizeDateOnly(value = "") {
+  return String(value || "").slice(0, 10);
+}
+
+
+function getCheckSituation(check, today = localTodayIso()) {
+  const dueDate = normalizeDateOnly(check?.due_date);
+  const rawStatus = String(check?.status || "").trim().toLowerCase();
+  const effectiveStatus = String(check?.effective_status || "").trim().toLowerCase();
+  const isCompensated = rawStatus === "compensado" || effectiveStatus === "compensado";
+  const isCancelled = rawStatus === "cancelado" || effectiveStatus === "cancelado";
+
+  if (isCompensated) {
+    return {
+      key: "compensated",
+      label: "COMPENSADO",
+      summaryLabel: "Compensados",
+      isPayable: false,
+      tone: "success",
+      rowClass: "",
+    };
+  }
+
+  if (isCancelled) {
+    return {
+      key: "cancelled",
+      label: "CANCELADO",
+      summaryLabel: "Cancelados",
+      isPayable: false,
+      tone: "neutral",
+      rowClass: "",
+    };
+  }
+
+  if (dueDate && dueDate < today) {
+    return {
+      key: "overdue",
+      label: "ATRASADO",
+      summaryLabel: "Atrasados",
+      isPayable: true,
+      tone: "danger",
+      rowClass: "row-danger",
+    };
+  }
+
+  if (dueDate && dueDate === today) {
+    return {
+      key: "due_today",
+      label: "VENCE HOJE",
+      summaryLabel: "Vencendo hoje",
+      isPayable: true,
+      tone: "warning",
+      rowClass: "row-warning",
+    };
   }
 
   return {
+    key: "future_pending",
+    label: "PENDENTE FUTURO",
+    summaryLabel: "Pendentes futuros",
+    isPayable: true,
+    tone: "brand",
+    rowClass: "",
+  };
+}
+
+
+function matchesCheckStatus(check, statusFilter, today = localTodayIso()) {
+  if (!statusFilter) return true;
+
+  const situation = getCheckSituation(check, today);
+  const normalizedFilter = String(statusFilter || "").trim().toLowerCase();
+  const normalizedStatus = String(check?.status || "").trim().toLowerCase();
+  const normalizedEffectiveStatus = String(check?.effective_status || "").trim().toLowerCase();
+
+  if (normalizedFilter === "pendente") {
+    return situation.isPayable;
+  }
+
+  if (normalizedFilter === "atrasado") {
+    return situation.key === "overdue" || normalizedStatus === "atrasado" || normalizedEffectiveStatus === "atrasado";
+  }
+
+  if (normalizedFilter === "compensado") {
+    return situation.key === "compensated";
+  }
+
+  if (normalizedFilter === "cancelado") {
+    return situation.key === "cancelled";
+  }
+
+  if (normalizedFilter === "vencendo hoje") {
+    return situation.key === "due_today";
+  }
+
+  return normalizedStatus === normalizedFilter
+    || normalizedEffectiveStatus === normalizedFilter
+    || situation.summaryLabel.toLowerCase() === normalizedFilter
+    || situation.label.toLowerCase() === normalizedFilter;
+}
+
+
+function matchesCheckQuickFilter(check, quickFilter, today = localTodayIso()) {
+  const activeFilter = quickFilter || "all";
+  if (activeFilter === "all") return true;
+
+  const situation = getCheckSituation(check, today);
+
+  if (activeFilter === "payable") {
+    return situation.isPayable;
+  }
+
+  return situation.key === activeFilter;
+}
+
+
+function buildCheckSituationSummary(checks, today = localTodayIso()) {
+  const summary = {
+    dueTodayChecks: [],
+    futurePendingChecks: [],
+    overdueChecks: [],
+    compensatedChecks: [],
+    payableChecks: [],
+    cancelledChecks: [],
+  };
+
+  checks.forEach((check) => {
+    const situation = getCheckSituation(check, today);
+    if (situation.key === "due_today") summary.dueTodayChecks.push(check);
+    if (situation.key === "future_pending") summary.futurePendingChecks.push(check);
+    if (situation.key === "overdue") summary.overdueChecks.push(check);
+    if (situation.key === "compensated") summary.compensatedChecks.push(check);
+    if (situation.key === "cancelled") summary.cancelledChecks.push(check);
+    if (situation.isPayable) summary.payableChecks.push(check);
+  });
+
+  return summary;
+}
+
+
+function getFilteredChecksData() {
+  const period = getPeriod("checks");
+  const checksInPeriod = filterByPeriod(state.data.checks, "due_date", period);
+  const today = localTodayIso();
+  const searchedChecks = getSimpleSearchRecords(
+    [...checksInPeriod],
+    ["check_number", "beneficiary", "notes"],
+    state.filters.checks.search,
+  );
+  const statusFilteredChecks = searchedChecks.filter((check) => matchesCheckStatus(check, state.filters.checks.status, today));
+  const filteredChecks = statusFilteredChecks.filter((check) => matchesCheckQuickFilter(check, state.filters.checks.quick_filter, today));
+  const summary = buildCheckSituationSummary(filteredChecks, today);
+
+  return {
     period,
+    today,
     checksInPeriod,
+    searchedChecks,
+    statusFilteredChecks,
     filteredChecks,
-    pendingChecks: checksInPeriod.filter((check) => check.effective_status === "Pendente"),
-    compensatedChecks: checksInPeriod.filter((check) => check.effective_status === "Compensado"),
-    overdueChecks: checksInPeriod.filter((check) => check.effective_status === "Atrasado"),
+    dueTodayChecks: summary.dueTodayChecks,
+    futurePendingChecks: summary.futurePendingChecks,
+    overdueChecks: summary.overdueChecks,
+    compensatedChecks: summary.compensatedChecks,
+    payableChecks: summary.payableChecks,
+    cancelledChecks: summary.cancelledChecks,
   };
 }
 
 
 function renderChecksMetricsSection() {
-  const { filteredChecks, pendingChecks, compensatedChecks, overdueChecks } = getFilteredChecksData();
+  const {
+    dueTodayChecks,
+    futurePendingChecks,
+    overdueChecks,
+    compensatedChecks,
+    payableChecks,
+  } = getFilteredChecksData();
+  const metrics = [
+    {
+      label: "Vencendo hoje",
+      value: formatMoney(sumBy(dueTodayChecks, (check) => check.amount)),
+      helper: `${dueTodayChecks.length} registro(s)`,
+      tone: "check-due-today",
+    },
+    {
+      label: "Pendentes futuros",
+      value: formatMoney(sumBy(futurePendingChecks, (check) => check.amount)),
+      helper: `${futurePendingChecks.length} registro(s)`,
+      tone: "check-future-pending",
+    },
+    {
+      label: "Atrasados",
+      value: formatMoney(sumBy(overdueChecks, (check) => check.amount)),
+      helper: `${overdueChecks.length} registro(s)`,
+      tone: "check-overdue",
+    },
+    {
+      label: "Compensados",
+      value: formatMoney(sumBy(compensatedChecks, (check) => check.amount)),
+      helper: `${compensatedChecks.length} registro(s)`,
+      tone: "check-compensated",
+    },
+    {
+      label: "Total a pagar",
+      value: formatMoney(sumBy(payableChecks, (check) => check.amount)),
+      helper: `${payableChecks.length} registro(s) em aberto`,
+      tone: "check-total-payable",
+    },
+  ];
 
   return `
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Cheques pendentes", value: formatMoney(sumBy(pendingChecks, (check) => check.amount)), helper: `${pendingChecks.length} registro(s)`, tone: "warning" })}
-      ${renderMetricCard({ label: "Cheques compensados", value: formatMoney(sumBy(compensatedChecks, (check) => check.amount)), helper: `${compensatedChecks.length} registro(s)`, tone: "success" })}
-      ${renderMetricCard({ label: "Cheques atrasados", value: formatMoney(sumBy(overdueChecks, (check) => check.amount)), helper: `${overdueChecks.length} registro(s)`, tone: overdueChecks.length ? "danger" : "success" })}
-      ${renderMetricCard({ label: "No filtro", value: formatMoney(sumBy(filteredChecks, (check) => check.amount)), helper: `${filteredChecks.length} registro(s)` })}
+    <section class="metrics-grid ${getMetricsGridClass(metrics.length)}">
+      ${metrics.map((metric) => renderMetricCard(metric)).join("")}
     </section>
   `;
 }
 
 
 function renderChecksDashboardSection() {
-  const { period, checksInPeriod, overdueChecks } = getFilteredChecksData();
+  const {
+    filteredChecks,
+  } = getFilteredChecksData();
 
   return `
     <section class="dashboard-grid">
-      ${renderBarChart({ title: "Cheques por semana", subtitle: "Agrupado pela data prevista", data: groupByWeek(checksInPeriod, "due_date", (check) => check.amount, 8) })}
-      ${renderBarChart({ title: "Cheques por mês", subtitle: "Agrupado pela data prevista", data: groupByMonth(checksInPeriod, "due_date", (check) => check.amount, 6) })}
-      ${renderStatList({ title: "Quantidade por status", subtitle: period.label, rows: getStatusTotals(checksInPeriod, "effective_status", "amount"), money: true })}
-      ${renderStatList({
-        title: "Cheques atrasados",
-        subtitle: "Lista de atenção imediata",
-        rows: overdueChecks.map((check) => ({ label: `${check.check_number} - ${check.beneficiary}`, value: check.amount, helper: `${check.days_overdue} dia(s) de atraso` })),
-      })}
+      ${renderBarChart({ title: "Cheques por semana", subtitle: "Agrupado pela data prevista", data: groupByWeek(filteredChecks, "due_date", (check) => check.amount, 8) })}
+      ${renderBarChart({ title: "Cheques por mês", subtitle: "Agrupado pela data prevista", data: groupByMonth(filteredChecks, "due_date", (check) => check.amount, 6) })}
+    </section>
+  `;
+}
+
+
+function renderChecksQuickFilters() {
+  const activeFilter = state.filters.checks.quick_filter || "all";
+  return `
+    <section class="checks-quick-filters" aria-label="Filtros rápidos de cheques">
+      ${CHECK_QUICK_FILTERS.map((filter) => `
+        <button
+          type="button"
+          class="checks-filter-chip ${activeFilter === filter.value ? "active" : ""}"
+          data-action="checks-quick-filter"
+          data-filter-value="${filter.value}"
+        >
+          ${escapeHtml(filter.label)}
+        </button>
+      `).join("")}
     </section>
   `;
 }
@@ -5021,9 +5288,10 @@ function renderChecksListPanel() {
       <div class="section-header">
         <div>
           <h3>Lista de cheques</h3>
-          <p>Filtro aplicado pela data prevista.</p>
+          <p>Filtros rápidos por situação usando a data prevista do cheque.</p>
         </div>
       </div>
+      ${renderChecksQuickFilters()}
       ${filteredChecks.length ? `
         <div class="table-wrapper">
           <table class="data-table">
@@ -5034,29 +5302,32 @@ function renderChecksListPanel() {
                 <th>Valor</th>
                 <th>Emissão</th>
                 <th>Previsto</th>
-                <th>Status</th>
+                <th>Situação</th>
                 <th>Compensado</th>
                 <th>Dias</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              ${filteredChecks.map((check) => `
-                <tr class="${check.is_overdue ? "row-danger" : ""}">
+              ${filteredChecks.map((check) => {
+                const situation = getCheckSituation(check);
+                return `
+                <tr class="${situation.rowClass}">
                   <td>${escapeHtml(check.check_number)}</td>
                   <td>${escapeHtml(check.beneficiary)}</td>
                   <td>${formatMoney(check.amount)}</td>
                   <td>${formatDate(check.issue_date)}</td>
                   <td>${formatDate(check.due_date)}</td>
-                  <td>${renderBadge(check.effective_status, statusTone(check.effective_status))}</td>
+                  <td><span class="badge check-status-badge check-status-${situation.key}">${escapeHtml(situation.label)}</span></td>
                   <td>${renderCheckCompensatedToggle(check)}</td>
                   <td>
-                    <small>Pendente: ${formatNumber(check.days_pending)}</small><br>
+                    <small>Em aberto: ${formatNumber(check.days_pending)}</small><br>
                     <small>Atraso: ${formatNumber(check.days_overdue)}</small>
                   </td>
                   <td>${renderTableActions("check", check.id)}</td>
                 </tr>
-              `).join("")}
+              `;
+              }).join("")}
             </tbody>
           </table>
         </div>
@@ -6150,10 +6421,13 @@ function renderSalesPage() {
 
       <section class="page-grid page-grid-2 sales-main-grid">
         <article class="panel sales-form-card">
-          <div class="section-header">
-            <div>
+          <div class="section-header sales-form-header">
+            <div class="sales-section-heading-wrap">
+              <span class="sales-section-heading-icon sales-section-heading-icon-form" aria-hidden="true">${renderSalesIcon("quick_sale")}</span>
+              <div>
               <h3>${editing ? "Editar venda rápida" : "Nova venda rápida"}</h3>
               <p>${editing ? "Atualize o lançamento selecionado mantendo o fluxo simples do caixa." : "Preencha valor, pagamento, data e hora para registrar uma venda em poucos segundos."}</p>
+              </div>
             </div>
             <span class="sales-section-chip">${escapeHtml(period.label)}</span>
           </div>
@@ -6166,18 +6440,27 @@ function renderSalesPage() {
             </label>
             <label class="sales-payment-field">
               <span>Meio de pagamento</span>
-              <select name="payment_method" required>
-                ${renderPaymentOptions(selectedPaymentMethod, salesPaymentMethods)}
-              </select>
+              <div class="sales-inline-control">
+                <span class="sales-inline-control-icon" aria-hidden="true">${renderSalesIcon("payment")}</span>
+                <select name="payment_method" required>
+                  ${renderPaymentOptions(selectedPaymentMethod, salesPaymentMethods)}
+                </select>
+              </div>
             </label>
             <div class="field-span-2 quick-sale-meta">
               <label>
                 <span>Data da venda</span>
-                <input type="date" name="sale_date" value="${currentDate}" required>
+                <div class="sales-inline-control">
+                  <span class="sales-inline-control-icon" aria-hidden="true">${renderSalesIcon("calendar")}</span>
+                  <input type="date" name="sale_date" value="${currentDate}" required>
+                </div>
               </label>
               <label>
                 <span>Hora da venda</span>
-                <input type="time" name="sale_time" value="${currentTime}" step="60" required>
+                <div class="sales-inline-control">
+                  <span class="sales-inline-control-icon" aria-hidden="true">${renderSalesIcon("clock")}</span>
+                  <input type="time" name="sale_time" value="${currentTime}" step="60" required>
+                </div>
               </label>
             </div>
 
@@ -7021,10 +7304,6 @@ function renderBillsPage() {
             </div>
           </label>
         </div>
-        <label class="field-span-2">
-          <span>Observações</span>
-          <textarea name="notes" rows="3">${escapeHtml(toFormValue(editing?.notes))}</textarea>
-        </label>
         <div class="form-actions field-span-2">
           <button type="submit" class="btn btn-primary">${editing ? "Salvar boleto" : "Cadastrar boleto"}</button>
           <button type="button" class="btn btn-secondary" data-action="clear-bills-form">Limpar formulário</button>
@@ -7477,6 +7756,10 @@ function handlePageClick(event) {
       state.filters.products.quick_filter = state.filters.products.quick_filter === nextValue ? "" : nextValue;
       state.filters.products.page = 1;
       renderCurrentPage();
+    },
+    "checks-quick-filter": () => {
+      state.filters.checks.quick_filter = button.dataset.filterValue || "all";
+      renderFilterResultsScope("checks");
     },
     "clear-products-import": () => {
       clearProductsImportSelection();
