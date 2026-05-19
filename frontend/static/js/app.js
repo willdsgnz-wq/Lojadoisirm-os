@@ -34,14 +34,28 @@ const SIDEBAR_MOBILE_QUERY = window.matchMedia("(max-width: 960px)");
 
 const pageTitles = {
   sales: "Vendas",
+  quotes: "Orçamentos",
   missing_items: "Itens Faltantes",
+  date_calculator: "Calcular Dias",
   expenses: "Contas Pagas",
   bills: "Boletos",
   checks: "Cheques",
 };
 
+const pageSubtitles = {
+  sales: "MATERIAL DE CONSTRUÇÃO DOIS IRMÃOS ONDE HABITA BENÇÃOS",
+  quotes: "Crie, gerencie e gere orçamentos para seus clientes.",
+  missing_items: "Controle os itens que precisam ser repostos.",
+  date_calculator: "Calcule prazos e intervalos de forma rápida.",
+  expenses: "Gerencie contas pagas e saídas financeiras.",
+  bills: "Acompanhe boletos, vencimentos e pagamentos.",
+  checks: "Gerencie e acompanhe todos os cheques cadastrados.",
+};
+
 const PROFILE_MENU_PAGE_KEY_MAP = {
   sales: "dashboard",
+  quotes: "quotes",
+  date_calculator: "date-calculator",
   expenses: "shortcut-expenses",
   bills: "shortcut-bills",
   checks: "shortcut-checks",
@@ -52,6 +66,8 @@ const PROFILE_MENU_SECTIONS = [
     title: "Navegação",
     items: [
       { key: "dashboard", label: "Dashboard", icon: "layout-dashboard", action: { type: "page", page: "sales" } },
+      { key: "quotes", label: "Orçamentos", icon: "file-text", action: { type: "page", page: "quotes" } },
+      { key: "date-calculator", label: "Calcular Dias", icon: "calendar-days", action: { type: "page", page: "date_calculator" } },
       { key: "favorites", label: "Favoritos", icon: "star", action: { type: "toast", message: "Seus favoritos aparecerão aqui em breve." } },
       { key: "recent", label: "Recentes", icon: "clock-3", action: { type: "toast", message: "Seu histórico recente aparecerá aqui em breve." } },
       {
@@ -84,13 +100,6 @@ const PROFILE_MENU_SECTIONS = [
   },
 ];
 
-const PROFILE_MENU_FOOTER_ACTION = {
-  key: "logout",
-  label: "Sair",
-  icon: "log-out",
-  action: { type: "logout" },
-};
-
 const PROFILE_ICON_MAP = {
   "layout-dashboard": `
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -109,6 +118,19 @@ const PROFILE_ICON_MAP = {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="8.5"></circle>
       <path d="M12 7.5v5l3.5 2"></path>
+    </svg>
+  `,
+  "calendar-days": `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 3.8v3"></path>
+      <path d="M17 3.8v3"></path>
+      <rect x="4.5" y="5.8" width="15" height="13.7" rx="2"></rect>
+      <path d="M4.5 9.5h15"></path>
+      <path d="M8 13h2"></path>
+      <path d="M12 13h2"></path>
+      <path d="M16 13h.01"></path>
+      <path d="M8 16.5h2"></path>
+      <path d="M12 16.5h2"></path>
     </svg>
   `,
   sparkles: `
@@ -256,6 +278,23 @@ const SALES_MONTH_OPTIONS = [
   { value: "12", label: "Dezembro" },
 ];
 
+function createInitialDateCalculatorState() {
+  const today = todayIso();
+  return {
+    differenceStartDate: today,
+    differenceEndDate: today,
+    differenceDays: null,
+    differenceMessage: "",
+    differenceTone: "success",
+    futureBaseDate: today,
+    futureDaysAhead: "",
+    futureResultDate: "",
+    futureWeekday: "",
+    futureMessage: "",
+    futureTone: "success",
+  };
+}
+
 const state = {
   user: null,
   page: "sales",
@@ -276,6 +315,7 @@ const state = {
     activeKey: "dashboard",
     shortcutsOpen: false,
   },
+  dateCalculator: createInitialDateCalculatorState(),
   nfe: {
     selectedSaleId: "",
     validation: null,
@@ -376,7 +416,18 @@ const state = {
     nfe: { search: "", sale_id: "" },
     expenses: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "" },
     bills: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "" },
-    checks: { preset: "month", day: todayIso(), start: monthStart, end: todayIso(), search: "", status: "", quick_filter: "all" },
+    checks: {
+      preset: "all",
+      day: todayIso(),
+      start: monthStart,
+      end: todayIso(),
+      specific_month: String(new Date().getMonth() + 1),
+      specific_year: String(new Date().getFullYear()),
+      search: "",
+      status: "",
+      quick_filter: "all",
+      page: 1,
+    },
     reports: { module: "sales", preset: "month", day: todayIso(), start: monthStart, end: todayIso() },
   },
 };
@@ -401,10 +452,7 @@ const formScopeMap = {
 };
 
 const elements = {
-  loginView: document.getElementById("login-view"),
   appShell: document.getElementById("app-shell"),
-  loginForm: document.getElementById("login-form"),
-  loginError: document.getElementById("login-error"),
   pageContent: document.getElementById("page-content"),
   topAlertContainer: document.getElementById("top-alert-container"),
   pageTitle: document.getElementById("page-title"),
@@ -442,20 +490,17 @@ async function init() {
   initializeSidebarLayout();
   bindGlobalEvents();
   registerPwaSupport();
+  showApp();
 
   try {
-    const response = await api.me();
-    state.user = response.user;
-    showApp();
     await loadData();
-  } catch {
-    showLogin();
+  } catch (error) {
+    showToast(error.message || "Não foi possível carregar o sistema.", "error");
   }
 }
 
 
 function bindGlobalEvents() {
-  elements.loginForm.addEventListener("submit", handleLoginSubmit);
   elements.installAppButton?.addEventListener("click", handleInstallApp);
   elements.notificationsButton?.addEventListener("click", handleNotificationsToggle);
   elements.notificationsClearButton?.addEventListener("click", handleClearNotifications);
@@ -497,30 +542,8 @@ function bindGlobalEvents() {
 }
 
 
-function showLogin() {
-  elements.loginView.classList.remove("hidden");
-  elements.appShell.classList.add("hidden");
-  state.layout.sidebarMobileOpen = false;
-  state.profileMenu.open = false;
-  state.profileMenu.activeKey = "dashboard";
-  state.profileMenu.shortcutsOpen = false;
-  applySidebarLayout();
-  state.notifications.items = [];
-  state.notifications.open = false;
-  state.nfe.validation = null;
-  state.nfe.selectedSaleId = "";
-  state.nfe.fiscalEditorOpen = false;
-  state.topAlert = null;
-  renderNotifications();
-  renderTopAlert();
-  renderProfileMenu();
-  updateInstallButtonVisibility();
-}
-
-
 function showApp() {
-  elements.loginView.classList.add("hidden");
-  elements.appShell.classList.remove("hidden");
+  elements.appShell?.classList.remove("hidden");
   renderProfileMenu();
   applySidebarLayout();
   renderNotifications();
@@ -589,7 +612,7 @@ function renderProfileMenu() {
 
 
 function renderProfileMenuSections() {
-  const sectionsMarkup = PROFILE_MENU_SECTIONS.map((section) => `
+  return PROFILE_MENU_SECTIONS.map((section) => `
     <section class="profile-menu-section">
       <span class="profile-menu-section-title">${escapeHtml(section.title)}</span>
       <div class="profile-menu-list">
@@ -597,13 +620,6 @@ function renderProfileMenuSections() {
       </div>
     </section>
   `).join("");
-
-  return `
-    ${sectionsMarkup}
-    <div class="profile-menu-footer">
-      ${renderProfileMenuActionButton(PROFILE_MENU_FOOTER_ACTION, { danger: true })}
-    </div>
-  `;
 }
 
 
@@ -878,6 +894,44 @@ function localTodayIso() {
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+
+function getDefaultQuoteValidityDate(baseDate = localTodayIso()) {
+  return addDaysToIsoDate(normalizeDateOnly(baseDate) || localTodayIso(), 7) || localTodayIso();
+}
+
+
+function shouldKeepQuoteValidityAutomatic(quoteDate, validityDate) {
+  const normalizedQuoteDate = normalizeDateOnly(quoteDate) || localTodayIso();
+  const normalizedValidityDate = normalizeDateOnly(validityDate);
+  if (!normalizedValidityDate) {
+    return true;
+  }
+  return normalizedValidityDate === getDefaultQuoteValidityDate(normalizedQuoteDate);
+}
+
+
+function syncQuoteValidityField(form, { force = false } = {}) {
+  if (!form) return;
+
+  const quoteDateField = form.querySelector('[name="quote_date"]');
+  const validityField = form.querySelector('[name="validity_date"]');
+  if (!(quoteDateField instanceof HTMLInputElement) || !(validityField instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const quoteDate = normalizeDateOnly(quoteDateField.value) || localTodayIso();
+  const nextValidityDate = getDefaultQuoteValidityDate(quoteDate);
+  const automatic = validityField.dataset.autoManaged !== "false";
+
+  if (force || automatic || !normalizeDateOnly(validityField.value)) {
+    validityField.value = nextValidityDate;
+  }
+
+  validityField.dataset.autoManaged = String(
+    shouldKeepQuoteValidityAutomatic(quoteDateField.value, validityField.value),
+  );
 }
 
 
@@ -1236,23 +1290,16 @@ async function handleProfileMenuPanelClick(event) {
   const actionParent = actionButton.dataset.profileMenuParent || "";
 
   state.profileMenu.open = false;
-  if (actionType !== "logout") {
-    state.profileMenu.activeKey = actionKey;
-  }
+  state.profileMenu.activeKey = actionKey;
   if (actionParent === "shortcuts") {
     state.profileMenu.shortcutsOpen = true;
-  } else if (actionType !== "logout") {
+  } else {
     state.profileMenu.shortcutsOpen = false;
   }
   renderProfileMenu();
 
   if (actionType === "page" && actionPage) {
     setPage(actionPage);
-    return;
-  }
-
-  if (actionType === "logout") {
-    await handleLogout();
     return;
   }
 
@@ -1341,54 +1388,9 @@ function handleAppInstalled() {
 }
 
 
-async function handleLoginSubmit(event) {
-  event.preventDefault();
-  elements.loginError.classList.add("hidden");
-  elements.loginError.textContent = "";
-
-  const form = new FormData(event.currentTarget);
-  const payload = {
-    username: form.get("username"),
-    password: form.get("password"),
-  };
-
-  try {
-    const response = await api.login(payload);
-    state.user = response.user;
-    showApp();
-    await loadData();
-    showToast("Login realizado com sucesso.");
-  } catch (error) {
-    elements.loginError.textContent = error.message;
-    elements.loginError.classList.remove("hidden");
-  }
-}
-
-
 function clearSearchTimers() {
   searchTimers.forEach((timerId) => clearTimeout(timerId));
   searchTimers.clear();
-}
-
-
-async function handleLogout() {
-  try {
-    await api.logout();
-  } finally {
-    clearSearchTimers();
-    state.user = null;
-    state.notifications.items = [];
-    state.notifications.open = false;
-    state.profileMenu.open = false;
-    state.profileMenu.activeKey = "dashboard";
-    state.profileMenu.shortcutsOpen = false;
-    state.nfe.validation = null;
-    state.nfe.selectedSaleId = "";
-    state.nfe.fiscalEditorOpen = false;
-    state.topAlert = null;
-    showLogin();
-    showToast("Sessão encerrada.", "info");
-  }
 }
 
 
@@ -1431,7 +1433,9 @@ function setPage(page) {
 function renderCurrentPage() {
   const renderMap = {
     sales: renderSalesPage,
+    quotes: renderQuotesPage,
     missing_items: renderMissingItemsPage,
+    date_calculator: renderDateCalculatorPage,
     expenses: renderExpensesPage,
     bills: renderBillsPage,
     checks: renderChecksPage,
@@ -1445,6 +1449,10 @@ function renderCurrentPage() {
   syncProfileMenuActive(activePage);
   renderProfileMenu();
   elements.pageTitle.textContent = pageTitles[activePage] || "Sistema";
+  const pageSubtitleElement = document.querySelector(".topbar-left .eyebrow");
+  if (pageSubtitleElement) {
+    pageSubtitleElement.textContent = pageSubtitles[activePage] || BRAND_NAME;
+  }
   document.title = `${BRAND_NAME} | ${pageTitles[activePage] || "Sistema"}`;
   elements.navLinks.forEach((link) => {
     const isActive = link.dataset.page === activePage;
@@ -1465,7 +1473,10 @@ function renderCurrentPage() {
   const customersForm = document.getElementById("customers-form");
   if (customersForm) syncCustomerFormVisibility(customersForm);
   const quotesForm = document.getElementById("quotes-form");
-  if (quotesForm) updateQuoteTotals(quotesForm);
+  if (quotesForm) {
+    syncQuoteValidityField(quotesForm);
+    updateQuoteTotals(quotesForm);
+  }
   const salesForm = document.getElementById("sales-form");
   if (salesForm) updateSaleTotals(salesForm);
   const productsForm = document.getElementById("products-form");
@@ -1523,9 +1534,10 @@ function getSearchResultsMarkup(scope, part = "default") {
       list: renderBillsListPanel,
     },
     checks: {
-      metrics: renderChecksMetricsSection,
+      metrics: renderChecksStudioMetrics,
       dashboard: renderChecksDashboardSection,
       list: renderChecksListPanel,
+      summary: renderChecksSummaryCard,
     },
   };
 
@@ -2083,6 +2095,44 @@ function setFormBusy(form, isBusy) {
 
 
 function getPeriod(scope) {
+  if (scope === "checks") {
+    const filter = state.filters.checks;
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const toIso = (date) => {
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${date.getFullYear()}-${month}-${day}`;
+    };
+
+    if (filter.preset === "all") {
+      return { start: "0000-01-01", end: "9999-12-31", label: "Todos" };
+    }
+
+    if (filter.preset === "specific_month") {
+      const selectedMonth = Math.min(Math.max(Number(filter.specific_month || today.getMonth() + 1), 1), 12);
+      const monthIndex = selectedMonth - 1;
+      const start = new Date(currentYear, monthIndex, 1);
+      const end = new Date(currentYear, monthIndex + 1, 0);
+      const monthLabel = SALES_MONTH_OPTIONS.find((item) => item.value === String(selectedMonth))?.label || "Mês específico";
+      return {
+        start: toIso(start),
+        end: toIso(end),
+        label: `${monthLabel} de ${currentYear}`,
+      };
+    }
+
+    if (filter.preset === "specific_year") {
+      const selectedYear = Number(filter.specific_year || currentYear);
+      const safeYear = Number.isInteger(selectedYear) && selectedYear > 1900 ? selectedYear : currentYear;
+      return {
+        start: `${safeYear}-01-01`,
+        end: `${safeYear}-12-31`,
+        label: `Ano ${safeYear}`,
+      };
+    }
+  }
+
   if (scope === "sales" && state.filters.sales.preset === "specific_month" && state.filters.sales.specific_month) {
     const today = new Date();
     const selectedMonth = Number(state.filters.sales.specific_month);
@@ -2427,6 +2477,165 @@ function renderHero(title, text, actions = "") {
 }
 
 
+function renderDateCalculatorIcon(name) {
+  const icons = {
+    difference: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5" width="15" height="14.5" rx="2"></rect>
+        <path d="M8 3.8v2.8"></path>
+        <path d="M16 3.8v2.8"></path>
+        <path d="M4.5 9.2h15"></path>
+        <path d="M8 13.2h8"></path>
+        <path d="M8 16.5h5"></path>
+      </svg>
+    `,
+    future: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 7v5l3 2"></path>
+        <circle cx="12" cy="13" r="7.5"></circle>
+        <path d="M16.5 4.5H19"></path>
+        <path d="M5 4.5h2.5"></path>
+      </svg>
+    `,
+    result: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 12h15"></path>
+        <path d="m13 7 5 5-5 5"></path>
+        <path d="m11 17-5-5 5-5"></path>
+      </svg>
+    `,
+  };
+  return icons[name] || icons.result;
+}
+
+
+function renderDateCalculatorFeedback(message, tone = "success") {
+  return `
+    <p class="form-feedback ${message ? `form-feedback-${tone}` : "hidden"}">
+      ${escapeHtml(message || "")}
+    </p>
+  `;
+}
+
+
+function renderDateCalculatorResultCard({ eyebrow, title, value, helper, tone = "default", emptyText = "" }) {
+  const hasValue = Boolean(value);
+
+  return `
+    <article class="date-calculator-result-card ${hasValue ? `date-calculator-result-${tone}` : "is-empty"}">
+      <div class="date-calculator-result-top">
+        <span class="date-calculator-result-icon" aria-hidden="true">${renderDateCalculatorIcon("result")}</span>
+        <div>
+          <small>${escapeHtml(eyebrow)}</small>
+          <strong>${escapeHtml(title)}</strong>
+        </div>
+      </div>
+      ${hasValue
+        ? `
+          <div class="date-calculator-result-value">${escapeHtml(value)}</div>
+          <p>${escapeHtml(helper || "")}</p>
+        `
+        : `
+          <div class="date-calculator-result-placeholder">${escapeHtml(emptyText)}</div>
+        `}
+    </article>
+  `;
+}
+
+
+function parseIsoDateParts(value) {
+  const normalized = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+
+  const [year, month, day] = normalized.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return { year, month, day };
+}
+
+
+function isoDateToUtcTimestamp(value) {
+  const parts = parseIsoDateParts(value);
+  if (!parts) return null;
+  return Date.UTC(parts.year, parts.month - 1, parts.day);
+}
+
+
+function diffDaysBetweenIsoDates(startDate, endDate) {
+  const startTimestamp = isoDateToUtcTimestamp(startDate);
+  const endTimestamp = isoDateToUtcTimestamp(endDate);
+  if (startTimestamp === null || endTimestamp === null) return null;
+  return Math.round((endTimestamp - startTimestamp) / 86400000);
+}
+
+
+function addDaysToIsoDate(baseDate, days) {
+  const baseTimestamp = isoDateToUtcTimestamp(baseDate);
+  if (baseTimestamp === null) return "";
+
+  const shiftedDate = new Date(baseTimestamp);
+  shiftedDate.setUTCDate(shiftedDate.getUTCDate() + Number(days || 0));
+
+  const year = String(shiftedDate.getUTCFullYear());
+  const month = String(shiftedDate.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(shiftedDate.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+
+function getFullWeekdayLabel(dateValue) {
+  const timestamp = isoDateToUtcTimestamp(dateValue);
+  if (timestamp === null) return "";
+
+  const weekday = new Date(timestamp).getUTCDay();
+  const labels = [
+    "Domingo",
+    "Segunda-feira",
+    "Terça-feira",
+    "Quarta-feira",
+    "Quinta-feira",
+    "Sexta-feira",
+    "Sábado",
+  ];
+  return labels[weekday] || "";
+}
+
+
+function updateDateCalculatorField(field, value) {
+  if (!field) return;
+
+  const calculation = state.dateCalculator;
+  if (field === "differenceStartDate") {
+    calculation.differenceStartDate = value;
+    calculation.differenceDays = null;
+    calculation.differenceMessage = "";
+    calculation.differenceTone = "success";
+    return;
+  }
+  if (field === "differenceEndDate") {
+    calculation.differenceEndDate = value;
+    calculation.differenceDays = null;
+    calculation.differenceMessage = "";
+    calculation.differenceTone = "success";
+    return;
+  }
+  if (field === "futureBaseDate") {
+    calculation.futureBaseDate = value;
+    calculation.futureResultDate = "";
+    calculation.futureWeekday = "";
+    calculation.futureMessage = "";
+    calculation.futureTone = "success";
+    return;
+  }
+  if (field === "futureDaysAhead") {
+    calculation.futureDaysAhead = String(value || "").replace(/\D/g, "");
+    calculation.futureResultDate = "";
+    calculation.futureWeekday = "";
+    calculation.futureMessage = "";
+    calculation.futureTone = "success";
+  }
+}
+
+
 function renderTableActions(entity, id) {
   return `
     <div class="table-actions">
@@ -2704,25 +2913,19 @@ function resetQuoteComposer() {
 
 function clearQuoteDraft(form = null) {
   const composer = getQuoteComposer();
-  composer.draft = createQuoteDraftItem({ unit: composer.draft?.unit || "UN", quantity: 1, unit_price: 0 });
+  composer.draft = createQuoteDraftItem({ unit: "UN", quantity: 1, unit_price: 0 });
   composer.editingIndex = null;
 
   if (!form) return;
 
   const itemNameField = form.querySelector('[name="draft_item_name"]');
-  const unitField = form.querySelector('[name="draft_unit"]');
   const quantityField = form.querySelector('[name="draft_quantity"]');
   const unitPriceField = form.querySelector('[name="draft_unit_price"]');
 
   if (itemNameField) itemNameField.value = "";
-  if (unitField) unitField.value = composer.draft.unit;
   if (quantityField) quantityField.value = String(composer.draft.quantity);
   if (unitPriceField) {
     applyMoneyDigits(unitPriceField, moneyDigitsFromValue(composer.draft.unit_price));
-  }
-  const matchContainer = form.querySelector("[data-quote-product-match]");
-  if (matchContainer) {
-    matchContainer.outerHTML = renderQuoteMatchedProduct(null);
   }
 }
 
@@ -2730,24 +2933,13 @@ function clearQuoteDraft(form = null) {
 function readQuoteDraftFromForm(form) {
   const composer = getQuoteComposer();
   const itemNameRaw = form.querySelector('[name="draft_item_name"]')?.value || "";
-  const unit = form.querySelector('[name="draft_unit"]')?.value || "UN";
   const quantityValue = Number(form.querySelector('[name="draft_quantity"]')?.value || 0);
   const unitPriceValue = parseMoneyInputValue(form.querySelector('[name="draft_unit_price"]')?.value || 0);
-  const matchedProduct = resolveQuoteDraftProduct(itemNameRaw);
-  const normalizedInput = normalizeQuoteLookupValue(itemNameRaw);
-  const shouldUseProductName = Boolean(
-    matchedProduct
-    && [
-      normalizeQuoteLookupValue(matchedProduct.name),
-      normalizeQuoteLookupValue(matchedProduct.sku || matchedProduct.code),
-      normalizeQuoteLookupValue(getQuoteProductLookupLabel(matchedProduct)),
-    ].includes(normalizedInput)
-  );
 
   composer.draft = createQuoteDraftItem({
-    product_id: matchedProduct?.id || null,
-    item_name: shouldUseProductName ? matchedProduct.name : itemNameRaw,
-    unit: unit || matchedProduct?.unit || "UN",
+    product_id: null,
+    item_name: itemNameRaw,
+    unit: "UN",
     quantity: quantityValue,
     unit_price: unitPriceValue,
   }, { allowZeroQuantity: true });
@@ -2761,105 +2953,106 @@ function renderQuoteDraftEditor() {
   const draft = composer.draft || createQuoteDraftItem();
   const isEditingItem = Number.isInteger(composer.editingIndex);
   const draftTotal = Number((Number(draft.quantity || 0) * Number(draft.unit_price || 0)).toFixed(2));
-  const matchedProduct = resolveQuoteDraftProduct(draft.item_name);
 
   return `
-    <div class="quote-entry-form-card quotes-item-entry-card">
-      <div class="quote-entry-form-grid quotes-item-entry-grid">
-        <label class="quote-entry-name quotes-item-autocomplete">
-          <span>Produto / item</span>
-          <input
-            type="text"
-            name="draft_item_name"
-            list="quotes-product-suggestions"
-            value="${escapeHtml(toFormValue(draft.item_name))}"
-            placeholder="Digite nome, SKU ou item avulso"
-            autocomplete="off"
-          >
-          <datalist id="quotes-product-suggestions">
-            ${renderQuoteProductSuggestions()}
-          </datalist>
-          ${renderQuoteMatchedProduct(matchedProduct)}
+    <section class="quote-studio-card quote-studio-item-card">
+      <div class="quote-studio-section-title">
+        <span class="quote-studio-section-icon quote-studio-section-icon-orange" aria-hidden="true">${renderChecksPageIcon("plus")}</span>
+        <h3>Adicionar item ao orçamento</h3>
+      </div>
+      <div class="quote-entry-form-grid quotes-item-entry-grid quote-studio-item-grid">
+        <label class="quote-entry-name quote-studio-field">
+          <span>Descrição</span>
+          <div class="quote-studio-input-shell">
+            <span aria-hidden="true">${renderChecksPageIcon("file")}</span>
+            <input
+              type="text"
+              name="draft_item_name"
+              value="${escapeHtml(toFormValue(draft.item_name))}"
+              placeholder="Ex.: Cimento CP II 50kg"
+              autocomplete="off"
+            >
+          </div>
         </label>
-        <label class="quote-entry-unit">
-          <span>Unidade</span>
-          <select name="draft_unit">
-            ${renderQuoteUnitOptions(draft.unit || "UN")}
-          </select>
-        </label>
-        <label class="quote-entry-quantity">
-          <span>Quantidade</span>
+        <label class="quote-entry-quantity quote-studio-field">
+          <span>QNTD</span>
           <input type="number" name="draft_quantity" min="0.01" step="0.01" value="${escapeHtml(String(draft.quantity || 1))}">
         </label>
-        <label class="quote-entry-price">
+        <label class="quote-entry-price quote-studio-field">
           <span>Valor unitário</span>
           ${renderMoneyInput({ name: "draft_unit_price", value: draft.unit_price ?? 0, classes: "money-input-compact" })}
         </label>
-        <div class="line-total-box quote-entry-total-box">
-          <span>Total do item</span>
+        <div class="line-total-box quote-entry-total-box quote-studio-total-field">
+          <span>Valor total</span>
           <strong data-quote-draft-total>${formatMoney(draftTotal)}</strong>
         </div>
+        <div class="quote-entry-actions quotes-item-entry-actions quote-studio-item-actions">
+          <button type="button" class="btn btn-primary quote-studio-add-button" data-action="save-quote-item">
+            <span aria-hidden="true">${renderChecksPageIcon("plus")}</span>
+            ${isEditingItem ? "Salvar alteração" : "Adicionar item"}
+          </button>
+          ${isEditingItem ? '<button type="button" class="btn btn-secondary quote-studio-cancel-edit" data-action="cancel-quote-item-edit">Cancelar edição</button>' : ""}
+        </div>
       </div>
-      <div class="quote-entry-actions quotes-item-entry-actions">
-        <button type="button" class="btn btn-primary" data-action="save-quote-item">${isEditingItem ? "Salvar alteração" : "Adicionar item"}</button>
-        ${isEditingItem ? '<button type="button" class="btn btn-secondary" data-action="cancel-quote-item-edit">Cancelar edição</button>' : ""}
-      </div>
-    </div>
+    </section>
   `;
 }
 
 
 function renderQuoteItemsList() {
   const composer = getQuoteComposer();
-  const itemsTotal = sumBy(composer.items, (item) => item.total_price);
 
-  return composer.items.length ? `
-    <div class="table-wrapper quote-items-table-wrapper quotes-items-table-wrapper">
-      <table class="data-table quote-items-table quotes-items-table">
+  return `
+    <div class="table-wrapper quote-items-table-wrapper quotes-items-table-wrapper quote-studio-table-wrapper">
+      <table class="data-table quote-items-table quotes-items-table quote-studio-table">
         <thead>
           <tr>
-            <th>Item</th>
-            <th>Unidade</th>
-            <th>Quantidade</th>
-            <th>Valor unitário</th>
+            <th>Nº</th>
+            <th>Descrição</th>
+            <th>Qtd</th>
+            <th>Valor unit.</th>
             <th>Total</th>
-            <th></th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody>
-          ${composer.items.map((item, index) => `
+          ${composer.items.length ? composer.items.map((item, index) => `
             <tr>
+              <td><span class="quote-row-number">${String(index + 1).padStart(2, "0")}</span></td>
               <td>
                 <strong>${escapeHtml(item.item_name)}</strong>
-                <small>Item ${index + 1}</small>
               </td>
-              <td>${escapeHtml(item.unit || "UN")}</td>
               <td>${formatNumber(item.quantity)}</td>
               <td>${formatMoney(item.unit_price)}</td>
               <td>${formatMoney(item.total_price)}</td>
               <td>
-                <div class="table-actions">
-                  <button type="button" class="table-action" data-action="edit-quote-item" data-index="${index}">Editar</button>
-                  <button type="button" class="table-action danger" data-action="remove-quote-item" data-index="${index}">Remover</button>
+                <div class="table-actions quote-studio-row-actions">
+                  <button type="button" class="quote-studio-icon-action" data-action="edit-quote-item" data-index="${index}" title="Editar item" aria-label="Editar item ${index + 1}">
+                    ${renderChecksPageIcon("edit")}
+                  </button>
+                  <button type="button" class="quote-studio-icon-action danger" data-action="remove-quote-item" data-index="${index}" title="Excluir item" aria-label="Excluir item ${index + 1}">
+                    ${renderChecksPageIcon("trash")}
+                  </button>
                 </div>
               </td>
             </tr>
-            `).join("")}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colspan="4"><strong>Total geral dos itens</strong></td>
-              <td><strong>${formatMoney(itemsTotal)}</strong></td>
-              <td></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    ` : `
-      <div class="quote-items-empty quotes-items-empty">
-        <strong>Nenhum item adicionado ainda</strong>
-        <p>Use o formulário acima para lançar os itens do orçamento. Ao pressionar Enter, o item é adicionado rapidamente.</p>
-      </div>
+            `).join("") : `
+              <tr class="quote-studio-empty-row">
+                <td colspan="6">
+                  <div class="quote-items-empty quotes-items-empty quote-studio-empty">
+                    <strong>Nenhum item adicionado ainda</strong>
+                    <p>Use o formulário acima para lançar os itens do orçamento.</p>
+                  </div>
+                </td>
+              </tr>
+            `}
+        </tbody>
+      </table>
+    </div>
+    <div class="quote-studio-table-footer">
+      <span data-quote-table-count>Exibindo ${formatNumber(composer.items.length)} de ${formatNumber(composer.items.length)} itens</span>
+      <span>Resumo atualizado automaticamente</span>
+    </div>
     `;
 }
 
@@ -2879,21 +3072,43 @@ function getQuoteTotals(items, discountAmount = 0) {
 
 function updateQuoteTotals(form) {
   const items = getQuoteItems();
-  const discountField = form.querySelector('[name="discount_amount"]');
-  const discountValue = parseMoneyInputValue(discountField?.value || 0);
-  const totals = getQuoteTotals(items, discountValue);
+  const totals = getQuoteTotals(items);
   const draft = readQuoteDraftFromForm(form);
+  const scopeRoot = form.closest(".quotes-builder-panel") || document;
   const draftTotalElement = form.querySelector("[data-quote-draft-total]");
   if (draftTotalElement) {
     draftTotalElement.textContent = formatMoney(Number(draft.quantity || 0) * Number(draft.unit_price || 0));
   }
 
-  const subtotalElement = form.querySelector("[data-quote-subtotal]");
-  const discountElement = form.querySelector("[data-quote-discount]");
   const totalElement = form.querySelector("[data-quote-total]");
-  if (subtotalElement) subtotalElement.textContent = formatMoney(totals.subtotal);
-  if (discountElement) discountElement.textContent = `Desconto: ${formatMoney(totals.discount)}`;
   if (totalElement) totalElement.textContent = formatMoney(totals.total);
+
+  const itemsCountBadge = scopeRoot.querySelector("[data-quote-items-count]");
+  if (itemsCountBadge) {
+    itemsCountBadge.textContent = `${formatNumber(items.length)} item(ns)`;
+  }
+
+  const itemsTotalBadge = scopeRoot.querySelector("[data-quote-items-total-badge]");
+  if (itemsTotalBadge) {
+    itemsTotalBadge.textContent = `${formatMoney(totals.total)} no total`;
+  }
+
+  const summaryItemsElement = scopeRoot.querySelector("[data-quote-summary-items]");
+  if (summaryItemsElement) summaryItemsElement.textContent = formatNumber(items.length);
+
+  const summarySubtotalElement = scopeRoot.querySelector("[data-quote-summary-subtotal]");
+  if (summarySubtotalElement) summarySubtotalElement.textContent = formatMoney(totals.subtotal);
+
+  const summaryDiscountElement = scopeRoot.querySelector("[data-quote-summary-discount]");
+  if (summaryDiscountElement) summaryDiscountElement.textContent = formatMoney(totals.discount);
+
+  const summaryTotalElement = scopeRoot.querySelector("[data-quote-summary-total]");
+  if (summaryTotalElement) summaryTotalElement.textContent = formatMoney(totals.total);
+
+  const tableCountElement = scopeRoot.querySelector("[data-quote-table-count]");
+  if (tableCountElement) {
+    tableCountElement.textContent = `Exibindo ${formatNumber(items.length)} de ${formatNumber(items.length)} itens`;
+  }
 }
 
 
@@ -2944,12 +3159,11 @@ function focusQuoteItemName(form) {
 
 function handleSaveQuoteItem(form) {
   const composer = getQuoteComposer();
-  syncQuoteDraftProductMatch(form, { forceName: true });
   const draft = readQuoteDraftFromForm(form);
 
   try {
     if (!draft.item_name) {
-      throw new Error("Informe o nome do item antes de adicionar ao orçamento.");
+      throw new Error("Informe a descrição do item antes de adicionar ao orçamento.");
     }
     if (!isValidNumber(draft.quantity, { min: 0.01, allowZero: false })) {
       throw new Error("Informe uma quantidade válida para o item do orçamento.");
@@ -2986,19 +3200,16 @@ function handleEditQuoteItem(form, index) {
   composer.draft = createQuoteDraftItem(item);
 
   const itemNameField = form.querySelector('[name="draft_item_name"]');
-  const unitField = form.querySelector('[name="draft_unit"]');
   const quantityField = form.querySelector('[name="draft_quantity"]');
   const unitPriceField = form.querySelector('[name="draft_unit_price"]');
 
   if (itemNameField) itemNameField.value = composer.draft.item_name;
-  if (unitField) unitField.value = composer.draft.unit;
   if (quantityField) quantityField.value = String(composer.draft.quantity);
   if (unitPriceField) {
     applyMoneyDigits(unitPriceField, moneyDigitsFromValue(composer.draft.unit_price));
   }
 
   clearFormFeedback("quotes", form);
-  syncQuoteDraftProductMatch(form, { preferCatalogValues: false });
   renderQuoteItemsSection(form);
   focusQuoteItemName(form);
 }
@@ -3180,6 +3391,23 @@ function paginateRecords(records, page = 1, perPage = PRODUCTS_PER_PAGE) {
     items: records.slice(start, start + perPage),
     totalItems: records.length,
   };
+}
+
+
+function buildPaginationTokens(currentPage, totalPages) {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, "...", totalPages];
+  }
+
+  if (currentPage >= totalPages - 3) {
+    return [1, "...", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+
+  return [1, "...", currentPage - 1, currentPage, currentPage + 1, "...", totalPages];
 }
 
 
@@ -4869,18 +5097,30 @@ function renderBillPaidToggle(bill) {
 
 function renderCheckCompensatedToggle(check) {
   const isCompensated = check.effective_status === "Compensado" || check.status === "Compensado";
-  const isLocked = isCompensated || check.status === "Cancelado";
+  const isCancelled = check.effective_status === "Cancelado" || check.status === "Cancelado";
+
+  if (isCompensated) {
+    return `
+      <span class="check-compensation-state is-complete">
+        <span class="check-compensation-state-icon" aria-hidden="true">✓</span>
+        <span>Compensado</span>
+      </span>
+    `;
+  }
+
+  if (isCancelled) {
+    return `
+      <span class="check-compensation-state is-neutral">
+        <span>Cancelado</span>
+      </span>
+    `;
+  }
+
   return `
-    <label class="table-paid-toggle check-compensated-toggle ${isCompensated ? "is-complete" : ""}">
-      <input
-        type="checkbox"
-        data-action="toggle-check-compensated"
-        data-id="${check.id}"
-        ${isCompensated ? "checked" : ""}
-        ${isLocked ? "disabled" : ""}
-      >
-      <span>${isCompensated ? "OK" : ""}</span>
-    </label>
+    <button type="button" class="check-compensation-button" data-action="mark-check-compensated" data-id="${check.id}">
+      <span class="check-compensation-button-icon" aria-hidden="true">✓</span>
+      <span>Marcar compensado</span>
+    </button>
   `;
 }
 
@@ -5076,7 +5316,7 @@ function getCheckSituation(check, today = localTodayIso()) {
   if (dueDate && dueDate === today) {
     return {
       key: "due_today",
-      label: "VENCE HOJE",
+      label: "EM ABERTO",
       summaryLabel: "Vencendo hoje",
       isPayable: true,
       tone: "warning",
@@ -5086,10 +5326,10 @@ function getCheckSituation(check, today = localTodayIso()) {
 
   return {
     key: "future_pending",
-    label: "PENDENTE FUTURO",
+    label: "EM ABERTO",
     summaryLabel: "Pendentes futuros",
     isPayable: true,
-    tone: "brand",
+    tone: "warning",
     rowClass: "",
   };
 }
@@ -5247,6 +5487,204 @@ function renderChecksMetricsSection() {
 }
 
 
+function renderChecksPageIcon(name) {
+  const icons = {
+    menu: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 7h14"></path>
+        <path d="M5 12h14"></path>
+        <path d="M5 17h14"></path>
+      </svg>
+    `,
+    file: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h7l3 3v14H7z"></path>
+        <path d="M14 3.5v4h4"></path>
+        <path d="M9.5 12h5"></path>
+        <path d="M9.5 15.5h5"></path>
+      </svg>
+    `,
+    money: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4v16"></path>
+        <path d="M16 7.5c-.8-1-2.1-1.5-3.8-1.5-2 0-3.4.9-3.4 2.4 0 3.5 7.2 1.6 7.2 5.7 0 1.7-1.5 3-4 3-1.7 0-3.2-.5-4.2-1.7"></path>
+      </svg>
+    `,
+    warning: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m12 3.5 9 16H3z"></path>
+        <path d="M12 8.5v5"></path>
+        <path d="M12 17h.01"></path>
+      </svg>
+    `,
+    check: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20 6 9 17l-5-5"></path>
+      </svg>
+    `,
+    user: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="8" r="3.5"></circle>
+        <path d="M5 20c1.2-3.5 3.6-5.2 7-5.2s5.8 1.7 7 5.2"></path>
+      </svg>
+    `,
+    plus: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v14"></path>
+        <path d="M5 12h14"></path>
+      </svg>
+    `,
+    clean: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m4 16 8-8 4 4-8 8H4z"></path>
+        <path d="m14 6 4 4"></path>
+      </svg>
+    `,
+    save: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M5 4h12l2 2v14H5z"></path>
+        <path d="M8 4v6h8V4"></path>
+        <path d="M8 17h8"></path>
+      </svg>
+    `,
+    print: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 8V4h10v4"></path>
+        <path d="M7 17H5a2 2 0 0 1-2-2v-4h18v4a2 2 0 0 1-2 2h-2"></path>
+        <path d="M7 14h10v6H7z"></path>
+      </svg>
+    `,
+    edit: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 20h4l11-11-4-4L4 16z"></path>
+        <path d="m13.5 6.5 4 4"></path>
+      </svg>
+    `,
+    trash: `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16"></path>
+        <path d="M10 11v6"></path>
+        <path d="M14 11v6"></path>
+        <path d="M6 7l1 14h10l1-14"></path>
+        <path d="M9 7V4h6v3"></path>
+      </svg>
+    `,
+  };
+
+  return icons[name] || icons.file;
+}
+
+
+function renderChecksStudioMetric({ icon, label, value, helper, tone = "brand" }) {
+  return `
+    <article class="checks-studio-metric checks-studio-metric-${tone}">
+      <span class="checks-studio-metric-icon" aria-hidden="true">${renderChecksPageIcon(icon)}</span>
+      <div>
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(value)}</strong>
+        <small>${escapeHtml(helper)}</small>
+      </div>
+    </article>
+  `;
+}
+
+
+function renderChecksStudioMetrics() {
+  const { filteredChecks, payableChecks, overdueChecks, compensatedChecks } = getFilteredChecksData();
+  const payableTotal = sumBy(payableChecks, (check) => check.amount);
+  const overdueTotal = sumBy(overdueChecks, (check) => check.amount);
+  const compensatedTotal = sumBy(compensatedChecks, (check) => check.amount);
+
+  const metrics = [
+    {
+      icon: "file",
+      label: "Cheques",
+      value: formatNumber(filteredChecks.length),
+      helper: "Quantidade total",
+      tone: "items",
+    },
+    {
+      icon: "money",
+      label: "Em aberto",
+      value: formatMoney(payableTotal),
+      helper: "Ainda não compensados",
+      tone: "open",
+    },
+    {
+      icon: "warning",
+      label: "Atrasados",
+      value: formatMoney(overdueTotal),
+      helper: "Vencidos no período",
+      tone: "overdue",
+    },
+    {
+      icon: "check",
+      label: "Compensados",
+      value: formatMoney(compensatedTotal),
+      helper: "Baixados no sistema",
+      tone: "done",
+    },
+  ];
+
+  return `
+    <section class="checks-studio-metrics">
+      ${metrics.map((metric) => renderChecksStudioMetric(metric)).join("")}
+    </section>
+  `;
+}
+
+
+function renderCheckRowActions(id) {
+  return `
+    <div class="checks-row-actions">
+      <button type="button" class="checks-icon-action" data-action="edit-check" data-id="${id}" title="Editar cheque" aria-label="Editar cheque">
+        ${renderChecksPageIcon("edit")}
+      </button>
+      <button type="button" class="checks-icon-action is-danger" data-action="delete-check" data-id="${id}" title="Excluir cheque" aria-label="Excluir cheque">
+        ${renderChecksPageIcon("trash")}
+      </button>
+    </div>
+  `;
+}
+
+
+function renderChecksSummaryCard() {
+  const { filteredChecks, payableChecks, overdueChecks, compensatedChecks } = getFilteredChecksData();
+  const totalAmount = sumBy(filteredChecks, (check) => check.amount);
+  const payableTotal = sumBy(payableChecks, (check) => check.amount);
+  const overdueTotal = sumBy(overdueChecks, (check) => check.amount);
+  const compensatedTotal = sumBy(compensatedChecks, (check) => check.amount);
+
+  return `
+    <aside class="checks-studio-card checks-summary-card">
+      <h3>Resumo de cheques</h3>
+      <div class="checks-summary-lines">
+        <div>
+          <span>Total cadastrado</span>
+          <strong>${formatMoney(totalAmount)}</strong>
+        </div>
+        <div>
+          <span>Em aberto</span>
+          <strong>${formatMoney(payableTotal)}</strong>
+        </div>
+        <div class="is-warning">
+          <span>Atrasados</span>
+          <strong>${formatMoney(overdueTotal)}</strong>
+        </div>
+        <div>
+          <span>Compensados</span>
+          <strong>${formatMoney(compensatedTotal)}</strong>
+        </div>
+      </div>
+      <div class="checks-summary-total">
+        <span>TOTAL GERAL</span>
+        <strong>${formatMoney(totalAmount)}</strong>
+      </div>
+    </aside>
+  `;
+}
+
+
 function renderChecksDashboardSection() {
   const {
     filteredChecks,
@@ -5280,56 +5718,195 @@ function renderChecksQuickFilters() {
 }
 
 
-function renderChecksListPanel() {
-  const { filteredChecks } = getFilteredChecksData();
+function getChecksYearOptions() {
+  const currentYear = new Date().getFullYear();
+  const years = new Set([currentYear, currentYear - 1, currentYear + 1]);
+
+  state.data.checks.forEach((check) => {
+    const year = Number(String(check.due_date || "").slice(0, 4));
+    if (Number.isInteger(year) && year > 1900) {
+      years.add(year);
+    }
+  });
+
+  return [...years].sort((left, right) => right - left);
+}
+
+
+function renderChecksListFilters() {
+  const filter = state.filters.checks;
+  const presets = [
+    { value: "today", label: "Hoje" },
+    { value: "yesterday", label: "Ontem" },
+    { value: "specific_month", label: "Mês específico" },
+    { value: "specific_year", label: "Ano específico" },
+    { value: "custom", label: "Período personalizado" },
+    { value: "all", label: "Todos" },
+  ];
+  const activePreset = presets.some((item) => item.value === filter.preset) ? filter.preset : "all";
 
   return `
-    <article class="panel">
-      <div class="section-header">
+    <section class="checks-list-filters" data-filter-scope="checks">
+      <label class="toolbar-field">
+        <span>Filtro</span>
+        <select name="preset">
+          ${presets.map((item) => `
+            <option value="${item.value}" ${activePreset === item.value ? "selected" : ""}>${item.label}</option>
+          `).join("")}
+        </select>
+      </label>
+
+      ${activePreset === "specific_month" ? `
+        <label class="toolbar-field">
+          <span>Mês</span>
+          <select name="specific_month">
+            ${SALES_MONTH_OPTIONS.map((item) => `
+              <option value="${item.value}" ${String(filter.specific_month || "") === item.value ? "selected" : ""}>${item.label}</option>
+            `).join("")}
+          </select>
+        </label>
+      ` : ""}
+
+      ${activePreset === "specific_year" ? `
+        <label class="toolbar-field">
+          <span>Ano</span>
+          <select name="specific_year">
+            ${getChecksYearOptions().map((year) => `
+              <option value="${year}" ${String(filter.specific_year || "") === String(year) ? "selected" : ""}>${year}</option>
+            `).join("")}
+          </select>
+        </label>
+      ` : ""}
+
+      ${activePreset === "custom" ? `
+        ${renderToolbarDateField({
+          label: "Início",
+          name: "start",
+          value: filter.start,
+          manual: true,
+        })}
+        ${renderToolbarDateField({
+          label: "Fim",
+          name: "end",
+          value: filter.end,
+          manual: true,
+        })}
+      ` : ""}
+
+      <label class="toolbar-field toolbar-search">
+        <span>Busca</span>
+        <input type="search" name="search" value="${escapeHtml(filter.search || "")}" placeholder="Buscar por nº, emitente ou observação">
+      </label>
+
+      <label class="toolbar-field">
+        <span>Status</span>
+        <select name="status">
+          <option value="">Todos</option>
+          ${(state.data.options.check_statuses || []).map((status) => `
+            <option value="${status}" ${filter.status === status ? "selected" : ""}>${status}</option>
+          `).join("")}
+        </select>
+      </label>
+    </section>
+  `;
+}
+
+
+function renderChecksListPanel() {
+  const { filteredChecks } = getFilteredChecksData();
+  const pagination = paginateRecords(filteredChecks, state.filters.checks.page, 10);
+  state.filters.checks.page = pagination.page;
+  const pagedChecks = pagination.items;
+  const tokens = buildPaginationTokens(pagination.page, pagination.totalPages);
+  const startRecord = filteredChecks.length ? ((pagination.page - 1) * 10) + 1 : 0;
+  const endRecord = filteredChecks.length ? startRecord + pagedChecks.length - 1 : 0;
+
+  return `
+    <article class="checks-studio-card checks-list-card">
+      <div class="checks-card-title-row">
         <div>
-          <h3>Lista de cheques</h3>
-          <p>Filtros rápidos por situação usando a data prevista do cheque.</p>
+          <h3>Cheques cadastrados</h3>
+          <p>${formatNumber(filteredChecks.length)} cheque(s) no período selecionado</p>
         </div>
+        <span>10 por página</span>
       </div>
-      ${renderChecksQuickFilters()}
+      ${renderChecksListFilters()}
       ${filteredChecks.length ? `
-        <div class="table-wrapper">
-          <table class="data-table">
+        <div class="table-wrapper checks-table-wrapper">
+          <table class="data-table checks-data-table">
             <thead>
               <tr>
-                <th>Número</th>
-                <th>Beneficiário</th>
+                <th>Nº Cheque</th>
+                <th>Emitente / Cliente</th>
                 <th>Valor</th>
-                <th>Emissão</th>
-                <th>Previsto</th>
-                <th>Situação</th>
-                <th>Compensado</th>
-                <th>Dias</th>
-                <th></th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th>Compensação</th>
+                <th>Resumo</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              ${filteredChecks.map((check) => {
+              ${pagedChecks.map((check) => {
                 const situation = getCheckSituation(check);
                 return `
                 <tr class="${situation.rowClass}">
                   <td>${escapeHtml(check.check_number)}</td>
-                  <td>${escapeHtml(check.beneficiary)}</td>
-                  <td>${formatMoney(check.amount)}</td>
-                  <td>${formatDate(check.issue_date)}</td>
-                  <td>${formatDate(check.due_date)}</td>
-                  <td><span class="badge check-status-badge check-status-${situation.key}">${escapeHtml(situation.label)}</span></td>
-                  <td>${renderCheckCompensatedToggle(check)}</td>
                   <td>
-                    <small>Em aberto: ${formatNumber(check.days_pending)}</small><br>
-                    <small>Atraso: ${formatNumber(check.days_overdue)}</small>
+                    <strong>${escapeHtml(check.beneficiary)}</strong>
                   </td>
-                  <td>${renderTableActions("check", check.id)}</td>
+                  <td class="checks-cell-money">${formatMoney(check.amount)}</td>
+                  <td class="checks-cell-date">${formatDate(check.due_date)}</td>
+                  <td class="checks-cell-status"><span class="badge check-status-badge check-status-${situation.key}">${escapeHtml(situation.label)}</span></td>
+                  <td class="checks-cell-compensation">${renderCheckCompensatedToggle(check)}</td>
+                  <td class="checks-cell-summary">
+                    <small><strong>Em aberto:</strong> ${formatNumber(check.days_pending)} dias</small>
+                    <small><strong>Atraso:</strong> ${formatNumber(check.days_overdue)} dias</small>
+                  </td>
+                  <td class="checks-cell-actions">${renderCheckRowActions(check.id)}</td>
                 </tr>
               `;
               }).join("")}
             </tbody>
           </table>
+        </div>
+        <div class="table-pagination checks-table-pagination">
+          <div class="checks-pagination-summary">
+            Mostrando ${formatNumber(startRecord)} a ${formatNumber(endRecord)} de ${formatNumber(filteredChecks.length)} registros
+          </div>
+          <div class="checks-pagination-controls">
+            <button
+              type="button"
+              class="table-action checks-pagination-nav"
+              data-action="checks-prev-page"
+              ${pagination.page <= 1 ? "disabled" : ""}
+            >
+              Anterior
+            </button>
+            <div class="checks-pagination-pages" aria-label="Paginação de cheques">
+              ${tokens.map((token) => (token === "..."
+                ? `<span class="checks-pagination-ellipsis">...</span>`
+                : `
+                  <button
+                    type="button"
+                    class="checks-pagination-page ${Number(token) === pagination.page ? "is-active" : ""}"
+                    data-action="checks-go-page"
+                    data-page="${token}"
+                  >
+                    ${token}
+                  </button>
+                `
+              )).join("")}
+            </div>
+            <button
+              type="button"
+              class="table-action checks-pagination-nav"
+              data-action="checks-next-page"
+              ${pagination.page >= pagination.totalPages ? "disabled" : ""}
+            >
+              Próxima
+            </button>
+          </div>
         </div>
       ` : renderEmptyState("Nenhum cheque encontrado", "Cadastre um cheque ou ajuste o período e o status.")}
     </article>
@@ -6481,20 +7058,21 @@ function renderSalesPage() {
 
 function summarizeQuoteItems(quote) {
   return quote.items
-    .map((item) => `${item.item_name || item.product_name} (${formatNumber(item.quantity)} ${item.unit || "UN"})`)
+    .map((item) => `${item.item_name || item.product_name} (${formatNumber(item.quantity)})`)
     .join(", ");
 }
 
 
 function buildDuplicateQuoteDraft(quote) {
+  const quoteDate = todayIso();
   return {
     ...quote,
     __composer_key: `quote-duplicate:${quote.id}:${Date.now()}`,
     id: "",
-    quote_date: todayIso(),
-    validity_date: quote.validity_date || quote.quote_date || todayIso(),
+    quote_date: quoteDate,
+    validity_date: getDefaultQuoteValidityDate(quoteDate),
     status: "Pendente",
-    notes: quote.notes || "",
+    notes: "",
     items: (quote.items || []).map((item) => createQuoteDraftItem(item)),
   };
 }
@@ -6509,27 +7087,214 @@ function buildQuoteDraftSnapshot() {
     normalizePayload(Object.fromEntries(new FormData(form).entries())),
   );
   const items = getQuoteItems().filter((item) => item.item_name);
-  const customerSelect = form.querySelector('[name="customer_id"]');
   const manualCustomerName = String(payload.customer_name_manual || "").trim();
-  const selectedCustomerName = customerSelect?.value
-    ? customerSelect.selectedOptions?.[0]?.textContent?.trim()
-    : "";
-  const customerName = manualCustomerName || selectedCustomerName || "Cliente não informado";
-  const totals = getQuoteTotals(items, payload.discount_amount || 0);
+  const quoteDate = payload.quote_date || todayIso();
+  const totals = getQuoteTotals(items);
 
   return {
     id: payload.id || "Prévia",
-    quote_date: payload.quote_date || todayIso(),
-    validity_date: payload.validity_date || payload.quote_date || todayIso(),
-    customer_name: customerName,
+    quote_date: quoteDate,
+    validity_date: payload.validity_date || getDefaultQuoteValidityDate(quoteDate),
+    customer_name: manualCustomerName || "Cliente não informado",
     customer_name_manual: manualCustomerName,
-    status: payload.status || "Pendente",
-    notes: payload.notes || "",
+    status: "Pendente",
+    notes: "",
     subtotal_amount: totals.subtotal,
-    discount_amount: Number(payload.discount_amount || 0),
+    discount_amount: 0,
     total_amount: totals.total,
     items,
   };
+}
+
+
+function buildQuotePayloadFromForm(form) {
+  const payload = normalizeMoneyPayload(
+    form,
+    normalizePayload(Object.fromEntries(new FormData(form).entries())),
+  );
+  const id = payload.id;
+  delete payload.id;
+  delete payload.draft_item_name;
+  delete payload.draft_quantity;
+  delete payload.draft_unit_price;
+  delete payload.customer_phone;
+  delete payload.customer_document;
+  payload.items = getQuoteItems().map((item) => ({
+    ...item,
+    unit: "UN",
+  }));
+  payload.status = "Pendente";
+  payload.discount_amount = "0.00";
+  payload.customer_name_manual = String(payload.customer_name_manual || "").trim();
+  payload.quote_date = payload.quote_date || localTodayIso();
+  payload.validity_date = payload.validity_date || getDefaultQuoteValidityDate(payload.quote_date);
+  payload.notes = "";
+  return { id, payload };
+}
+
+
+function syncQuoteEditorState(savedQuote = null) {
+  state.editing.quotes = savedQuote
+    ? {
+      ...savedQuote,
+      __composer_key: `quote:${savedQuote.id}`,
+    }
+    : null;
+  resetQuoteComposer();
+}
+
+
+async function persistQuoteForm(form, { successMessage } = {}) {
+  const { id, payload } = buildQuotePayloadFromForm(form);
+
+  try {
+    if (!payload.customer_name_manual) {
+      throw new Error("Informe o nome do cliente.");
+    }
+    if (!payload.items.length) {
+      throw new Error("Adicione pelo menos um item ao orçamento.");
+    }
+
+    payload.items.forEach((item, index) => {
+      if (!item.item_name) {
+        throw new Error(`Informe a descrição do item ${index + 1}.`);
+      }
+      if (!isValidNumber(item.quantity, { min: 0.01, allowZero: false })) {
+        throw new Error(`Informe uma quantidade válida no item ${index + 1}.`);
+      }
+      if (!isValidNumber(item.unit_price, { min: 0, allowZero: true })) {
+        throw new Error(`Informe um valor unitário válido no item ${index + 1}.`);
+      }
+    });
+  } catch (error) {
+    updateFormFeedback("quotes", form, error.message, "error");
+    showToast(error.message, "error");
+    return null;
+  }
+
+  setFormBusy(form, true);
+  try {
+    const response = id
+      ? await api.update("quotes", id, payload)
+      : await api.create("quotes", payload);
+    const message = successMessage || (id ? "Orçamento atualizado com sucesso." : "Orçamento salvo com sucesso.");
+    setFormFeedback("quotes", message, "success");
+    showToast(message);
+    await loadData();
+    const savedId = response?.item?.id ?? response?.id;
+    const refreshedQuote = state.data.quotes.find((item) => String(item.id) === String(savedId)) || response?.item || response;
+    syncQuoteEditorState(refreshedQuote);
+    renderCurrentPage();
+    return refreshedQuote;
+  } catch (error) {
+    updateFormFeedback("quotes", form, error.message, "error");
+    showToast(error.message, "error");
+    return null;
+  } finally {
+    setFormBusy(form, false);
+  }
+}
+
+
+function parseFilenameFromDisposition(headerValue = "") {
+  const utf8Match = headerValue.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const simpleMatch = headerValue.match(/filename="?([^"]+)"?/i);
+  return simpleMatch?.[1] || "";
+}
+
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+
+async function fetchQuotePdfBlob(quoteId) {
+  const response = await fetch(`/api/quotes/${quoteId}/pdf`, {
+    method: "GET",
+    credentials: "same-origin",
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || "Não foi possível gerar o PDF do orçamento.");
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: parseFilenameFromDisposition(response.headers.get("Content-Disposition") || "") || `orcamento-${quoteId}.pdf`,
+  };
+}
+
+
+async function openQuotePdfDocument(quoteId, mode = "pdf") {
+  const { blob, filename } = await fetchQuotePdfBlob(quoteId);
+
+  if (window.desktopShell?.isElectron) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const payload = { base64: bytesToBase64(bytes), filename };
+    if (mode === "print") {
+      await window.desktopShell.printPdfFile(payload);
+    } else {
+      await window.desktopShell.openPdfFile(payload);
+    }
+    return;
+  }
+
+  const pdfUrl = URL.createObjectURL(blob);
+  const popup = window.open(pdfUrl, "_blank", "noopener");
+  if (!popup) {
+    URL.revokeObjectURL(pdfUrl);
+    throw new Error("Permita pop-ups para abrir o PDF do orçamento.");
+  }
+
+  setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
+
+  if (mode === "print") {
+    const tryPrint = () => {
+      try {
+        popup.focus();
+        popup.print();
+      } catch {
+        // Em alguns navegadores o visualizador de PDF controla a impressão.
+      }
+    };
+    popup.addEventListener?.("load", tryPrint, { once: true });
+    setTimeout(tryPrint, 900);
+  }
+}
+
+
+async function handleCurrentQuoteDocumentAction(mode = "pdf") {
+  const form = document.getElementById("quotes-form");
+  if (!form) return;
+
+  const successMessage = mode === "print"
+    ? "Orçamento salvo e enviado para impressão."
+    : "Orçamento salvo e PDF gerado com sucesso.";
+  const savedQuote = await persistQuoteForm(form, { successMessage });
+  if (!savedQuote?.id) {
+    return;
+  }
+
+  try {
+    await openQuotePdfDocument(savedQuote.id, mode);
+  } catch (error) {
+    showToast(error.message, "error");
+  }
 }
 
 
@@ -6958,154 +7723,116 @@ function openQuoteOutput(quoteId, mode = "print") {
 
 
 function renderQuotesPage() {
-  const search = state.filters.quotes.search;
-  const status = state.filters.quotes.status;
   const editing = state.editing.quotes;
   const composer = syncQuoteComposerState();
-  const approvedCount = countBy(state.data.quotes, (quote) => quote.status === "Aprovado");
-  const pendingCount = countBy(state.data.quotes, (quote) => quote.status === "Pendente");
-  const canceledCount = countBy(
-    state.data.quotes,
-    (quote) => ["Cancelado", "Nao aprovado"].includes(quote.status),
-  );
-  const initialCustomerManualName = editing?.customer_name_manual || "";
-  const initialDiscount = Number(editing?.discount_amount || 0);
-  const initialSubtotal = sumBy(composer.items, (item) => item.total_price || (Number(item.quantity || 0) * Number(item.unit_price || 0)));
-  const initialTotal = Math.max(initialSubtotal - initialDiscount, 0);
-  const primaryActionLabel = editing ? "Salvar orçamento" : "Gerar orçamento";
+  const totals = getQuoteTotals(composer.items);
 
   return `
-    ${renderHero(
-      "Orçamentos",
-      "Fluxo de criação rápido para propostas: dados no topo, itens no centro e lista de orçamentos no final da página.",
-    )}
+    <section class="quotes-studio-page">
+      <form id="quotes-form" class="quotes-builder-form quote-studio-form quotes-builder-panel" novalidate>
+        <input type="hidden" name="id" value="${editing?.id ?? ""}">
+        ${renderFormFeedback("quotes")}
 
-    <section class="metrics-grid metrics-grid-4">
-      ${renderMetricCard({ label: "Total de orçamentos", value: formatNumber(state.data.quotes.length), helper: "Todos os registros" })}
-      ${renderMetricCard({ label: "Aprovados", value: formatNumber(approvedCount), helper: "Status aprovado", tone: "success" })}
-      ${renderMetricCard({ label: "Pendentes", value: formatNumber(pendingCount), helper: "Aguardando resposta", tone: "warning" })}
-      ${renderMetricCard({ label: "Cancelados", value: formatNumber(canceledCount), helper: "Propostas encerradas", tone: "danger" })}
-    </section>
-
-    <article class="panel quotes-builder-panel">
-      <div class="section-header quotes-builder-header">
-        <div>
-          <h3>${editing ? "Editar orçamento" : "Novo orçamento"}</h3>
-          <p>${editing ? "Revise os dados, ajuste os itens e salve a nova versão da proposta." : "Preencha os dados principais e lance os itens em sequência para gerar o orçamento com mais rapidez."}</p>
-        </div>
-        <div class="quotes-builder-badges">
-          <span class="quote-builder-badge">${formatNumber(composer.items.length)} item(ns)</span>
-          <span class="quote-builder-badge">${formatMoney(initialTotal)} no total</span>
-        </div>
-      </div>
-
-      <form id="quotes-form" class="quotes-builder-form">
-        <div class="quotes-form-shell">
-          <input type="hidden" name="id" value="${editing?.id ?? ""}">
-          ${renderFormFeedback("quotes")}
-
-          <section class="quotes-form-section">
-            <div class="section-header compact quotes-form-section-head">
-              <div>
-                <h3>Dados do orçamento</h3>
-                <p>Cliente, datas e status organizados para um preenchimento rápido e claro.</p>
+        <section class="quote-studio-card quote-studio-client-card">
+          <div class="quote-studio-section-title">
+            <span class="quote-studio-section-icon" aria-hidden="true">${renderChecksPageIcon("user")}</span>
+            <h3>Dados do cliente</h3>
+          </div>
+          <div class="quote-studio-client-grid">
+            <label class="quote-studio-field">
+              <span>Nome do cliente</span>
+              <div class="quote-studio-input-shell">
+                <span aria-hidden="true">${renderChecksPageIcon("user")}</span>
+                <input type="text" name="customer_name_manual" value="${escapeHtml(toFormValue(editing?.customer_name_manual || editing?.customer_name || ""))}" placeholder="Digite o nome do cliente" required>
               </div>
-            </div>
-            <div class="quotes-header-grid">
-              <label>
-                <span>Data</span>
-                <input type="date" name="quote_date" value="${editing?.quote_date || todayIso()}" required>
-              </label>
-              <label>
-                <span>Validade</span>
-                <input type="date" name="validity_date" value="${editing?.validity_date || editing?.quote_date || todayIso()}" required>
-              </label>
-              <label>
-                <span>Status</span>
-                <select name="status" required>${renderQuoteStatusOptions(editing?.status || "Pendente")}</select>
-              </label>
-              <label class="quotes-field-span-2">
-                <span>Nome do cliente</span>
-                <input type="text" name="customer_name_manual" value="${escapeHtml(toFormValue(initialCustomerManualName))}" placeholder="Digite manualmente, se preferir">
-              </label>
-              <label class="quotes-field-span-2">
-                <span>Cliente cadastrado</span>
-                <select name="customer_id">${renderCustomerOptions(editing?.customer_id || "")}</select>
-              </label>
-              <label class="quotes-field-span-3">
-                <span>Observações</span>
-                <textarea name="notes" rows="3" placeholder="Informações importantes para apresentar ao cliente.">${escapeHtml(toFormValue(editing?.notes))}</textarea>
-              </label>
-            </div>
-          </section>
+            </label>
+            <label class="quote-studio-field">
+              <span>Telefone / WhatsApp</span>
+              <div class="quote-studio-input-shell">
+                <span aria-hidden="true">${renderChecksPageIcon("check")}</span>
+                <input type="text" name="customer_phone" value="" placeholder="(00) 00000-0000" inputmode="tel">
+              </div>
+            </label>
+            <label class="quote-studio-field">
+              <span>CPF / CNPJ</span>
+              <div class="quote-studio-input-shell">
+                <span aria-hidden="true">${renderChecksPageIcon("file")}</span>
+                <input type="text" name="customer_document" value="" placeholder="000.000.000-00">
+              </div>
+            </label>
+          </div>
+        </section>
 
-          <section class="quotes-form-section quotes-items-section">
-            <div class="section-header compact quotes-form-section-head">
-              <div>
+        <section class="quote-studio-workgrid">
+          <div class="quote-studio-main-column">
+            ${renderQuoteDraftEditor()}
+
+            <section class="quote-studio-card quote-studio-items-card quotes-items-section">
+              <div class="quote-studio-section-title">
+                <span class="quote-studio-section-icon" aria-hidden="true">${renderChecksPageIcon("file")}</span>
                 <h3>Itens do orçamento</h3>
-                <p>Autocomplete por produto, valor total automático e edição rápida dos itens já lançados.</p>
               </div>
-            </div>
-            <div class="quotes-items-layout">
-              ${renderQuoteDraftEditor()}
               <div class="quotes-items-board" data-quote-items-list>
                 ${renderQuoteItemsList()}
               </div>
-            </div>
-            <div class="quote-totals-grid quotes-summary-grid">
-              <div class="items-total quotes-summary-card">
-                <span>Subtotal</span>
-                <strong data-quote-subtotal>${formatMoney(initialSubtotal)}</strong>
-              </div>
-              <label class="quote-discount-field quotes-summary-card">
-                <span>Desconto</span>
-                ${renderMoneyInput({ name: "discount_amount", value: initialDiscount, classes: "money-input-compact" })}
-              </label>
-              <div class="items-total total-final-box quotes-summary-card quotes-summary-total">
-                <span>Total final</span>
-                <strong data-quote-total>${formatMoney(initialTotal)}</strong>
-                <small data-quote-discount>Desconto: ${formatMoney(initialDiscount)}</small>
-              </div>
-            </div>
-          </section>
-
-          <div class="form-actions quotes-main-actions">
-            <button type="submit" class="btn btn-primary quotes-primary-submit">${primaryActionLabel}</button>
-            <button type="button" class="btn btn-secondary" data-action="print-quote" data-id="${editing?.id ?? ""}">Imprimir orçamento</button>
-            <button type="button" class="btn btn-secondary" data-action="pdf-quote" data-id="${editing?.id ?? ""}">Gerar PDF</button>
-            <button type="button" class="btn btn-secondary" data-action="clear-quotes-form">Limpar formulário</button>
+            </section>
           </div>
-        </div>
+
+          <aside class="quote-studio-card quote-studio-summary-card" aria-label="Resumo do orçamento">
+            <div class="quote-studio-section-title">
+              <span class="quote-studio-section-icon" aria-hidden="true">${renderChecksPageIcon("money")}</span>
+              <h3>Resumo do orçamento</h3>
+            </div>
+            <div class="quote-studio-summary-stack">
+              <article class="quote-studio-summary-box">
+                <span class="quote-studio-summary-icon" aria-hidden="true">${renderChecksPageIcon("file")}</span>
+                <div>
+                  <small>Quantidade de itens</small>
+                  <strong data-quote-summary-items>${formatNumber(composer.items.length)}</strong>
+                </div>
+              </article>
+              <article class="quote-studio-summary-box">
+                <span class="quote-studio-summary-icon" aria-hidden="true">${renderChecksPageIcon("save")}</span>
+                <div>
+                  <small>Subtotal</small>
+                  <strong data-quote-summary-subtotal>${formatMoney(totals.subtotal)}</strong>
+                </div>
+              </article>
+              <article class="quote-studio-summary-box quote-studio-summary-discount">
+                <span class="quote-studio-summary-icon" aria-hidden="true">${renderChecksPageIcon("clean")}</span>
+                <div>
+                  <small>Desconto</small>
+                  <strong data-quote-summary-discount>${formatMoney(totals.discount)}</strong>
+                </div>
+              </article>
+              <article class="quote-studio-summary-total">
+                <span>Total geral</span>
+                <strong data-quote-summary-total>${formatMoney(totals.total)}</strong>
+              </article>
+            </div>
+          </aside>
+        </section>
+
+        <footer class="quote-studio-actions form-actions quotes-main-actions quotes-main-actions-compact">
+          <button type="button" class="btn btn-secondary" data-action="new-quote">
+            <span aria-hidden="true">${renderChecksPageIcon("plus")}</span>
+            Novo orçamento
+          </button>
+          <button type="button" class="btn btn-secondary" data-action="clear-quotes-form">
+            <span aria-hidden="true">${renderChecksPageIcon("clean")}</span>
+            Limpar
+          </button>
+          <button type="button" class="btn btn-secondary" data-action="print-current-quote">
+            <span aria-hidden="true">${renderChecksPageIcon("print")}</span>
+            Imprimir
+          </button>
+          <button type="button" class="btn btn-primary quotes-primary-submit quote-studio-pdf-button" data-action="generate-quote-pdf">
+            <span aria-hidden="true">${renderChecksPageIcon("file")}</span>
+            Gerar PDF
+          </button>
+        </footer>
       </form>
-    </article>
-
-    <section class="panel toolbar-panel quotes-list-toolbar" data-filter-scope="quotes">
-      <div class="toolbar-row">
-        <label class="toolbar-field toolbar-search">
-          <span>Busca</span>
-          <input type="search" name="search" value="${escapeHtml(search)}" placeholder="Buscar por cliente, item ou observação">
-        </label>
-        <label class="toolbar-field">
-          <span>Status</span>
-          <select name="status">
-            <option value="">Todos</option>
-            ${state.data.options.quote_statuses.map((item) => `
-              <option value="${item}" ${status === item ? "selected" : ""}>${item}</option>
-            `).join("")}
-          </select>
-        </label>
-      </div>
     </section>
-
-    <article class="panel quotes-list-panel">
-      <div class="section-header">
-        <div>
-          <h3>Lista de orçamentos</h3>
-          <p>Consulte propostas existentes, filtre por status e use duplicação para acelerar novos atendimentos.</p>
-        </div>
-      </div>
-      <div data-search-results-scope="quotes">${renderQuotesListResults()}</div>
-    </article>
   `;
 }
 
@@ -7336,47 +8063,229 @@ function renderBillsPage() {
 
 function renderChecksPage() {
   const editing = state.editing.checks;
+  const formTitle = editing ? "Editar cheque" : "Dados do cheque";
+
+  return `
+    <section class="checks-studio-page">
+      <header class="checks-studio-header">
+        <button type="button" class="checks-menu-button" aria-label="Menu">
+          ${renderChecksPageIcon("menu")}
+        </button>
+        <div>
+          <h2>Cheques</h2>
+          <p><span>Gestão</span><span aria-hidden="true">›</span><strong>Cheques</strong></p>
+        </div>
+      </header>
+
+      <div data-search-results-scope="checks" data-search-results-part="metrics">${renderChecksStudioMetrics()}</div>
+
+      <form id="checks-form" class="checks-studio-form" novalidate>
+        <input type="hidden" name="id" value="${editing?.id ?? ""}">
+        ${renderFormFeedback("checks")}
+
+        <section class="checks-studio-card checks-details-card">
+          <div class="checks-section-title">
+            <span aria-hidden="true">${renderChecksPageIcon("user")}</span>
+            <h3>${escapeHtml(formTitle)}</h3>
+          </div>
+          <div class="checks-details-grid">
+            <label>
+              <span>Número do cheque <em>*</em></span>
+              <input type="text" name="check_number" value="${escapeHtml(toFormValue(editing?.check_number))}" placeholder="Ex.: 123456" required>
+            </label>
+            <label>
+              <span>Emitente / Cliente <em>*</em></span>
+              <input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" placeholder="Nome do emitente ou cliente" required>
+            </label>
+            <label>
+              <span>Observações</span>
+              <input type="text" name="notes" value="${escapeHtml(toFormValue(editing?.notes))}" placeholder="Ex.: banco, acordo, condição, etc.">
+            </label>
+          </div>
+        </section>
+
+        <section class="checks-studio-card checks-entry-card">
+          <div class="checks-section-title">
+            <span aria-hidden="true">${renderChecksPageIcon("file")}</span>
+            <h3>${editing ? "Atualizar cheque" : "Adicionar cheque"}</h3>
+          </div>
+          <div class="checks-entry-grid">
+            <label>
+              <span>Valor <em>*</em></span>
+              ${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}
+            </label>
+            <label>
+              <span>Data de emissão <em>*</em></span>
+              <input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required>
+            </label>
+            <label>
+              <span>Vencimento <em>*</em></span>
+              <input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required>
+            </label>
+            <label>
+              <span>Status <em>*</em></span>
+              <select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select>
+            </label>
+            <button type="submit" class="btn btn-primary checks-add-button">
+              ${renderChecksPageIcon("plus")}
+              ${editing ? "Salvar cheque" : "Adicionar cheque"}
+            </button>
+          </div>
+        </section>
+      </form>
+
+      <section class="checks-content-grid">
+        <div data-search-results-scope="checks" data-search-results-part="list">${renderChecksListPanel()}</div>
+        <div data-search-results-scope="checks" data-search-results-part="summary">${renderChecksSummaryCard()}</div>
+      </section>
+
+      <div class="checks-footer-actions">
+        <button type="button" class="btn btn-secondary" data-action="clear-checks-form">
+          ${renderChecksPageIcon("plus")}
+          Novo cheque
+        </button>
+        <button type="button" class="btn btn-secondary" data-action="clear-checks-form">
+          ${renderChecksPageIcon("clean")}
+          Limpar
+        </button>
+        <button type="submit" class="btn btn-secondary" form="checks-form">
+          ${renderChecksPageIcon("save")}
+          Salvar
+        </button>
+        <button type="button" class="btn btn-secondary" data-action="print-checks-page">
+          ${renderChecksPageIcon("print")}
+          Imprimir
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+
+function renderDateCalculatorPage() {
+  const calculation = state.dateCalculator;
+  const differenceValue = calculation.differenceDays === null
+    ? ""
+    : `${formatNumber(calculation.differenceDays)} dia${calculation.differenceDays === 1 ? "" : "s"}`;
 
   return `
     ${renderHero(
-      "Controle de cheques emitidos",
-      "Acompanhe pendências, compensações e atrasos com destaque visual, usando a data prevista para filtros e resumos.",
+      "Calcular Dias",
+      "Calcule a diferença entre datas ou descubra uma data futura com facilidade.",
+      `<button type="button" class="btn btn-secondary" data-action="clear-date-calculator">Limpar campos</button>`,
     )}
 
-    <article class="panel">
-      <div class="section-header">
-        <div>
-          <h3>${editing ? "Editar cheque" : "Novo cheque"}</h3>
-          <p>${editing ? "Atualize o cheque selecionado." : "Cadastre os cheques emitidos pela loja."}</p>
+    <section class="page-grid page-grid-2 date-calculator-grid">
+      <article class="panel date-calculator-panel">
+        <div class="date-calculator-panel-head">
+          <span class="date-calculator-panel-icon" aria-hidden="true">${renderDateCalculatorIcon("difference")}</span>
+          <div>
+            <h3>Calcular diferença entre datas</h3>
+            <p>Compare duas datas e veja o intervalo exato em dias, sem depender de horário.</p>
+          </div>
         </div>
-      </div>
-      <form id="checks-form" class="form-grid">
-        <input type="hidden" name="id" value="${editing?.id ?? ""}">
-        ${renderFormFeedback("checks")}
-        <label><span>Número do cheque</span><input type="text" name="check_number" value="${escapeHtml(toFormValue(editing?.check_number))}" required></label>
-        <label><span>Beneficiário</span><input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" required></label>
-        <label><span>Valor</span>${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}</label>
-        <label><span>Data de emissão</span><input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required></label>
-        <label><span>Data prevista</span><input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required></label>
-        <label><span>Status</span><select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select></label>
-        <div class="form-actions field-span-2">
-          <button type="submit" class="btn btn-primary">${editing ? "Salvar cheque" : "Cadastrar cheque"}</button>
-          <button type="button" class="btn btn-secondary" data-action="clear-checks-form">Limpar formulário</button>
+
+        <form class="date-calculator-form" id="date-calculator-difference-form">
+          <div class="date-calculator-form-grid">
+            <label>
+              <span>Data de início</span>
+              <input
+                type="date"
+                name="difference_start_date"
+                value="${escapeHtml(calculation.differenceStartDate || todayIso())}"
+                data-date-calculator-field="differenceStartDate"
+                required
+              >
+            </label>
+            <label>
+              <span>Data final</span>
+              <input
+                type="date"
+                name="difference_end_date"
+                value="${escapeHtml(calculation.differenceEndDate || todayIso())}"
+                data-date-calculator-field="differenceEndDate"
+                required
+              >
+            </label>
+          </div>
+
+          <p class="date-calculator-note">O cálculo considera apenas a data informada, sem influência de hora ou fuso.</p>
+          ${renderDateCalculatorFeedback(calculation.differenceMessage, calculation.differenceTone)}
+
+          <div class="date-calculator-actions">
+            <button type="button" class="btn btn-primary" data-action="calculate-date-difference">Calcular diferença</button>
+          </div>
+        </form>
+
+        ${renderDateCalculatorResultCard({
+          eyebrow: "Resultado",
+          title: "Diferença em dias",
+          value: differenceValue,
+          helper: calculation.differenceDays === null
+            ? ""
+            : `Entre ${formatDate(calculation.differenceStartDate)} e ${formatDate(calculation.differenceEndDate)} existem ${formatNumber(calculation.differenceDays)} dia${calculation.differenceDays === 1 ? "" : "s"} de diferença.`,
+          tone: calculation.differenceTone === "error" ? "danger" : "brand",
+          emptyText: "Escolha a data de início e a data final para ver a diferença em dias.",
+        })}
+      </article>
+
+      <article class="panel date-calculator-panel">
+        <div class="date-calculator-panel-head">
+          <span class="date-calculator-panel-icon is-accent" aria-hidden="true">${renderDateCalculatorIcon("future")}</span>
+          <div>
+            <h3>Calcular data futura</h3>
+            <p>Descubra qual será a data resultante ao avançar uma quantidade de dias e veja o dia da semana correspondente.</p>
+          </div>
         </div>
-      </form>
-    </article>
 
-    ${renderPeriodToolbar("checks", {
-      showSearch: true,
-      searchPlaceholder: "Buscar por número, beneficiário ou observação",
-      showStatus: true,
-      statusOptions: state.data.options.check_statuses,
-      manualDateFields: ["start", "end"],
-    })}
+        <form class="date-calculator-form" id="date-calculator-future-form">
+          <div class="date-calculator-form-grid">
+            <label>
+              <span>Data base</span>
+              <input
+                type="date"
+                name="future_base_date"
+                value="${escapeHtml(calculation.futureBaseDate || todayIso())}"
+                data-date-calculator-field="futureBaseDate"
+                required
+              >
+            </label>
+            <label>
+              <span>Dias para frente</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                inputmode="numeric"
+                placeholder="Ex.: 10"
+                name="future_days_ahead"
+                value="${escapeHtml(calculation.futureDaysAhead || "")}"
+                data-date-calculator-field="futureDaysAhead"
+                required
+              >
+            </label>
+          </div>
 
-    <div data-search-results-scope="checks" data-search-results-part="metrics">${renderChecksMetricsSection()}</div>
-    <div data-search-results-scope="checks" data-search-results-part="dashboard">${renderChecksDashboardSection()}</div>
-    <div data-search-results-scope="checks" data-search-results-part="list">${renderChecksListPanel()}</div>
+          <p class="date-calculator-note">Aceita apenas números inteiros positivos para avançar a data base.</p>
+          ${renderDateCalculatorFeedback(calculation.futureMessage, calculation.futureTone)}
+
+          <div class="date-calculator-actions">
+            <button type="button" class="btn btn-primary" data-action="calculate-future-date">Calcular data</button>
+          </div>
+        </form>
+
+        ${renderDateCalculatorResultCard({
+          eyebrow: "Resultado",
+          title: "Nova data",
+          value: calculation.futureResultDate ? formatDate(calculation.futureResultDate) : "",
+          helper: calculation.futureResultDate
+            ? `Dia da semana: ${calculation.futureWeekday}.`
+            : "",
+          tone: calculation.futureTone === "error" ? "danger" : "accent",
+          emptyText: "Informe uma data base e quantos dias deseja avançar para descobrir o resultado.",
+        })}
+      </article>
+    </section>
   `;
 }
 
@@ -7721,6 +8630,10 @@ function handlePageClick(event) {
       renderCurrentPage();
     },
     "clear-sales-form": () => clearEditing("sales"),
+    "new-quote": () => {
+      clearEditing("quotes");
+      showToast("Novo orçamento pronto para preenchimento.");
+    },
     "clear-quotes-form": () => clearEditing("quotes"),
     "clear-expenses-form": () => clearEditing("expenses"),
     "clear-bills-form": () => clearEditing("bills"),
@@ -7759,7 +8672,26 @@ function handlePageClick(event) {
     },
     "checks-quick-filter": () => {
       state.filters.checks.quick_filter = button.dataset.filterValue || "all";
+      state.filters.checks.page = 1;
       renderFilterResultsScope("checks");
+    },
+    "checks-prev-page": () => {
+      state.filters.checks.page = Math.max((state.filters.checks.page || 1) - 1, 1);
+      renderFilterResultsScope("checks");
+    },
+    "checks-next-page": () => {
+      state.filters.checks.page = (state.filters.checks.page || 1) + 1;
+      renderFilterResultsScope("checks");
+    },
+    "checks-go-page": () => {
+      state.filters.checks.page = Math.max(Number(button.dataset.page || 1), 1);
+      renderFilterResultsScope("checks");
+    },
+    "mark-check-compensated": () => {
+      void toggleCheckCompensated(id, true);
+    },
+    "print-checks-page": () => {
+      window.print();
     },
     "clear-products-import": () => {
       clearProductsImportSelection();
@@ -7876,8 +8808,22 @@ function handlePageClick(event) {
     "delete-bill": () => deleteEntity("bills", id, "boleto"),
     "delete-missing-item": () => deleteMissingItem(id),
     "delete-check": () => deleteEntity("checks", id, "cheque"),
-    "print-quote": () => openQuoteOutput(id, "print"),
-    "pdf-quote": () => openQuoteOutput(id, "pdf"),
+    "print-quote": () => {
+      if (id) {
+        void openQuotePdfDocument(id, "print").catch((error) => showToast(error.message, "error"));
+      }
+    },
+    "pdf-quote": () => {
+      if (id) {
+        void openQuotePdfDocument(id, "pdf").catch((error) => showToast(error.message, "error"));
+      }
+    },
+    "print-current-quote": () => {
+      void handleCurrentQuoteDocumentAction("print");
+    },
+    "generate-quote-pdf": () => {
+      void handleCurrentQuoteDocumentAction("pdf");
+    },
     "open-new-nfe-page": () => {
       window.location.assign("/nfe/nova");
     },
@@ -7923,6 +8869,81 @@ function handlePageClick(event) {
         picker.focus();
       }
     },
+    "calculate-date-difference": () => {
+      const { differenceStartDate, differenceEndDate } = state.dateCalculator;
+      if (!differenceStartDate || !differenceEndDate) {
+        state.dateCalculator.differenceDays = null;
+        state.dateCalculator.differenceTone = "error";
+        state.dateCalculator.differenceMessage = "Informe a data de início e a data final para calcular a diferença.";
+        renderCurrentPage();
+        return;
+      }
+
+      const difference = diffDaysBetweenIsoDates(differenceStartDate, differenceEndDate);
+      if (difference === null) {
+        state.dateCalculator.differenceDays = null;
+        state.dateCalculator.differenceTone = "error";
+        state.dateCalculator.differenceMessage = "Não foi possível interpretar as datas informadas. Revise os campos e tente novamente.";
+        renderCurrentPage();
+        return;
+      }
+
+      if (difference < 0) {
+        state.dateCalculator.differenceDays = null;
+        state.dateCalculator.differenceTone = "error";
+        state.dateCalculator.differenceMessage = "A data final não pode ser anterior à data inicial.";
+        renderCurrentPage();
+        return;
+      }
+
+      state.dateCalculator.differenceDays = difference;
+      state.dateCalculator.differenceTone = "success";
+      state.dateCalculator.differenceMessage = `Entre ${formatDate(differenceStartDate)} e ${formatDate(differenceEndDate)} existem ${formatNumber(difference)} dia${difference === 1 ? "" : "s"} de diferença.`;
+      renderCurrentPage();
+    },
+    "calculate-future-date": () => {
+      const { futureBaseDate, futureDaysAhead } = state.dateCalculator;
+      const daysAhead = Number(futureDaysAhead);
+
+      if (!futureBaseDate) {
+        state.dateCalculator.futureResultDate = "";
+        state.dateCalculator.futureWeekday = "";
+        state.dateCalculator.futureTone = "error";
+        state.dateCalculator.futureMessage = "Informe a data base para calcular a data futura.";
+        renderCurrentPage();
+        return;
+      }
+
+      if (!futureDaysAhead || !Number.isInteger(daysAhead) || daysAhead <= 0) {
+        state.dateCalculator.futureResultDate = "";
+        state.dateCalculator.futureWeekday = "";
+        state.dateCalculator.futureTone = "error";
+        state.dateCalculator.futureMessage = "Informe uma quantidade válida de dias usando apenas números inteiros positivos.";
+        renderCurrentPage();
+        return;
+      }
+
+      const resultDate = addDaysToIsoDate(futureBaseDate, daysAhead);
+      if (!resultDate) {
+        state.dateCalculator.futureResultDate = "";
+        state.dateCalculator.futureWeekday = "";
+        state.dateCalculator.futureTone = "error";
+        state.dateCalculator.futureMessage = "Não foi possível calcular a data futura com os valores informados.";
+        renderCurrentPage();
+        return;
+      }
+
+      const weekday = getFullWeekdayLabel(resultDate);
+      state.dateCalculator.futureResultDate = resultDate;
+      state.dateCalculator.futureWeekday = weekday;
+      state.dateCalculator.futureTone = "success";
+      state.dateCalculator.futureMessage = `Resultado: ${formatDate(resultDate)}. Dia da semana: ${weekday}.`;
+      renderCurrentPage();
+    },
+    "clear-date-calculator": () => {
+      state.dateCalculator = createInitialDateCalculatorState();
+      renderCurrentPage();
+    },
     "export-report": exportReport,
   };
 
@@ -7937,6 +8958,11 @@ function handlePageChange(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
+  if (target instanceof HTMLInputElement && target.dataset.dateCalculatorField) {
+    updateDateCalculatorField(target.dataset.dateCalculatorField, target.value);
+    return;
+  }
+
   if (target instanceof HTMLInputElement && target.id === "products-import-file") {
     updateProductsImportSelection(target);
     return;
@@ -7944,11 +8970,6 @@ function handlePageChange(event) {
 
   if (target instanceof HTMLInputElement && target.dataset.action === "toggle-bill-paid") {
     void toggleBillPaid(target.dataset.id, target.checked);
-    return;
-  }
-
-  if (target instanceof HTMLInputElement && target.dataset.action === "toggle-check-compensated") {
-    void toggleCheckCompensated(target.dataset.id, target.checked, target);
     return;
   }
 
@@ -7977,6 +8998,9 @@ function handlePageChange(event) {
       }
       if (scope === "products" && target.name !== "page") {
         state.filters.products.page = 1;
+      }
+      if (scope === "checks" && target.name !== "page") {
+        state.filters.checks.page = 1;
       }
       if (scope === "nfe" && target.name === "sale_id") {
         state.nfe.selectedSaleId = target.value;
@@ -8026,11 +9050,18 @@ function handlePageChange(event) {
   if (form?.getAttribute("id") === "quotes-form") {
     const fieldName = target.getAttribute("name") || "";
     if (fieldName === "draft_item_name") {
-      syncQuoteDraftProductMatch(form, { forceName: true });
       updateQuoteTotals(form);
       return;
     }
-    if (fieldName === "draft_unit") {
+    if (fieldName === "quote_date") {
+      syncQuoteValidityField(form);
+      return;
+    }
+    if (fieldName === "validity_date") {
+      target.dataset.autoManaged = String(shouldKeepQuoteValidityAutomatic(
+        form.querySelector('[name="quote_date"]')?.value,
+        target.value,
+      ));
       updateQuoteTotals(form);
       return;
     }
@@ -8061,6 +9092,14 @@ function handlePageInput(event) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
+  if (target instanceof HTMLInputElement && target.dataset.dateCalculatorField) {
+    updateDateCalculatorField(target.dataset.dateCalculatorField, target.value);
+    if (target.dataset.dateCalculatorField === "futureDaysAhead") {
+      target.value = state.dateCalculator.futureDaysAhead;
+    }
+    return;
+  }
+
   if (isManualToolbarDateInput(target)) {
     const selectionStart = target.selectionStart ?? target.value.length;
     const digitCount = target.value.slice(0, selectionStart).replace(/\D/g, "").length;
@@ -8080,6 +9119,9 @@ function handlePageInput(event) {
     }
     if (scope === "products") {
       state.filters.products.page = 1;
+    }
+    if (scope === "checks") {
+      state.filters.checks.page = 1;
     }
     clearTimeout(searchTimers.get(scope));
     searchTimers.set(scope, setTimeout(() => {
@@ -8119,17 +9161,19 @@ function handlePageInput(event) {
     }
   }
 
-  if (form?.getAttribute("id") === "quotes-form" && target.getAttribute("name") === "draft_item_name") {
-    syncQuoteDraftProductMatch(form);
-    updateQuoteTotals(form);
-    return;
-  }
-
-  if (
-    form?.getAttribute("id") === "quotes-form"
-    && ["draft_quantity", "draft_unit_price", "discount_amount", "draft_item_name"].includes(target.getAttribute("name") || "")
-  ) {
-    updateQuoteTotals(form);
+  if (form?.getAttribute("id") === "quotes-form") {
+    const fieldName = target.getAttribute("name") || "";
+    if (["draft_quantity", "draft_unit_price", "draft_item_name"].includes(fieldName)) {
+      updateQuoteTotals(form);
+      return;
+    }
+    if (fieldName === "validity_date") {
+      target.dataset.autoManaged = String(shouldKeepQuoteValidityAutomatic(
+        form.querySelector('[name="quote_date"]')?.value,
+        target.value,
+      ));
+      return;
+    }
   }
 
   if (
@@ -8256,7 +9300,7 @@ async function toggleCheckCompensated(id, isCompensated, input = null) {
     return;
   }
 
-  const confirmed = window.confirm("Confirmar que este cheque foi compensado?");
+  const confirmed = window.confirm("Deseja marcar este cheque como compensado?");
   if (!confirmed) {
     if (input instanceof HTMLInputElement) {
       input.checked = false;
@@ -8496,72 +9540,7 @@ async function submitFiscalSettingsForm(form) {
 
 
 async function submitQuotesForm(form) {
-  const payload = normalizeMoneyPayload(
-    form,
-    normalizePayload(Object.fromEntries(new FormData(form).entries())),
-  );
-  const id = payload.id;
-  delete payload.id;
-  delete payload.draft_item_name;
-  delete payload.draft_unit;
-  delete payload.draft_quantity;
-  delete payload.draft_unit_price;
-  payload.items = getQuoteItems();
-
-  try {
-    if (!payload.quote_date || !payload.validity_date || !payload.status) {
-      throw new Error("Preencha a data, a validade e o status do orçamento.");
-    }
-    if (payload.validity_date < payload.quote_date) {
-      throw new Error("A validade do orçamento não pode ser anterior à data do orçamento.");
-    }
-    if (!payload.items.length) {
-      throw new Error("Adicione pelo menos um item ao orçamento.");
-    }
-    payload.items.forEach((item, index) => {
-      if (!item.item_name) {
-        throw new Error(`Informe o nome do item ${index + 1}.`);
-      }
-      if (!isValidNumber(item.quantity, { min: 0.01, allowZero: false })) {
-        throw new Error(`Informe uma quantidade válida no item ${index + 1}.`);
-      }
-      if (!isValidNumber(item.unit_price, { min: 0, allowZero: true })) {
-        throw new Error(`Informe um valor unitário válido no item ${index + 1}.`);
-      }
-    });
-    if (!isValidNumber(payload.discount_amount || 0, { min: 0, allowZero: true })) {
-      throw new Error("Informe um desconto válido para o orçamento.");
-    }
-    const subtotal = sumBy(payload.items, (item) => item.total_price);
-    if (Number(payload.discount_amount || 0) > subtotal) {
-      throw new Error("O desconto não pode ser maior que o subtotal do orçamento.");
-    }
-  } catch (error) {
-    updateFormFeedback("quotes", form, error.message, "error");
-    showToast(error.message, "error");
-    return;
-  }
-
-  setFormBusy(form, true);
-  try {
-    if (id) {
-      await api.update("quotes", id, payload);
-      setFormFeedback("quotes", "Orçamento atualizado com sucesso.", "success");
-      showToast("Orçamento atualizado com sucesso.");
-    } else {
-      await api.create("quotes", payload);
-      setFormFeedback("quotes", "Orçamento cadastrado com sucesso.", "success");
-      showToast("Orçamento cadastrado com sucesso.");
-    }
-    state.editing.quotes = null;
-    resetQuoteComposer();
-    await loadData();
-  } catch (error) {
-    updateFormFeedback("quotes", form, error.message, "error");
-    showToast(error.message, "error");
-  } finally {
-    setFormBusy(form, false);
-  }
+  await persistQuoteForm(form);
 }
 
 

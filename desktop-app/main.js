@@ -3,7 +3,7 @@ const http = require("http");
 const path = require("path");
 const net = require("net");
 const { spawn, spawnSync } = require("child_process");
-const { app, BrowserWindow, Menu, dialog, shell } = require("electron");
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require("electron");
 
 const PRODUCT_NAME = "Material de Construção Dois Irmãos";
 const APP_ID = "com.doisirmaos.desktop";
@@ -98,6 +98,90 @@ function getStorageDirectory() {
   return app.isPackaged
     ? path.join(app.getPath("userData"), "storage")
     : path.join(getProjectRoot(), "storage");
+}
+
+function getTempPdfDirectory() {
+  const tempDir = path.join(app.getPath("temp"), "dois-irmaos-orcamentos");
+  fs.mkdirSync(tempDir, { recursive: true });
+  return tempDir;
+}
+
+function sanitizeFilename(filename) {
+  const safeName = String(filename || "orcamento.pdf")
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  return safeName.toLowerCase().endsWith(".pdf") ? safeName : `${safeName || "orcamento"}.pdf`;
+}
+
+function writePdfBufferToTemp(base64, filename) {
+  if (!base64) {
+    throw new Error("Nenhum conteúdo de PDF foi recebido para abrir o arquivo.");
+  }
+
+  const safeFilename = sanitizeFilename(filename);
+  const targetPath = path.join(getTempPdfDirectory(), `${Date.now()}-${safeFilename}`);
+  fs.writeFileSync(targetPath, Buffer.from(base64, "base64"));
+  return targetPath;
+}
+
+async function openPdfFile(payload = {}) {
+  const filePath = writePdfBufferToTemp(payload.base64, payload.filename);
+  const errorMessage = await shell.openPath(filePath);
+  if (errorMessage) {
+    throw new Error(errorMessage);
+  }
+  return { path: filePath };
+}
+
+function printPdfFile(payload = {}) {
+  return new Promise((resolve, reject) => {
+    const filePath = writePdfBufferToTemp(payload.base64, payload.filename);
+    const printWindow = new BrowserWindow({
+      show: false,
+      autoHideMenuBar: true,
+      backgroundColor: "#FFFFFF",
+      webPreferences: {
+        sandbox: false,
+      },
+    });
+
+    let completed = false;
+    const finalize = (callback) => {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      if (!printWindow.isDestroyed()) {
+        printWindow.close();
+      }
+      callback();
+    };
+
+    printWindow.webContents.once("did-fail-load", (_event, _code, description) => {
+      finalize(() => reject(new Error(description || "Não foi possível abrir o PDF para impressão.")));
+    });
+
+    printWindow.webContents.once("did-finish-load", () => {
+      setTimeout(() => {
+        printWindow.webContents.print(
+          {
+            silent: false,
+            printBackground: true,
+          },
+          (success, failureReason) => {
+            if (!success) {
+              finalize(() => reject(new Error(failureReason || "A impressão do orçamento foi cancelada ou falhou.")));
+              return;
+            }
+            finalize(() => resolve({ path: filePath }));
+          },
+        );
+      }, 450);
+    });
+
+    printWindow.loadURL(`file:///${toForwardSlash(filePath)}`);
+  });
 }
 
 function resolvePythonExecutable() {
@@ -372,6 +456,9 @@ async function bootstrapDesktopApp() {
 }
 
 if (singleInstanceLock) {
+  ipcMain.handle("desktop-shell:open-pdf", async (_event, payload) => openPdfFile(payload));
+  ipcMain.handle("desktop-shell:print-pdf", async (_event, payload) => printPdfFile(payload));
+
   app.on("second-instance", () => {
     if (!mainWindow) {
       return;

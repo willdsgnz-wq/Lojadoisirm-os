@@ -11,6 +11,7 @@ from backend import services
 from backend.auth import SESSION_COOKIE, create_session_token, verify_session_token
 from backend.config import load_environment
 from backend.db import initialize_database, run_runtime_migrations, should_auto_initialize
+from backend.quote_pdf import build_quote_pdf_bytes, quote_pdf_filename
 from database.seed import seed_database
 
 
@@ -149,15 +150,17 @@ def _serve_frontend(path: str) -> Response:
 def _current_user() -> dict[str, Any] | None:
     token = request.cookies.get(SESSION_COOKIE)
     payload = verify_session_token(token)
-    if not payload:
-        return None
-    return services.get_user_by_id(payload.get("user_id"))
+    if payload:
+        user = services.get_user_by_id(payload.get("user_id"))
+        if user:
+            return user
+    return services.get_primary_user()
 
 
 def _require_user() -> dict[str, Any]:
     user = _current_user()
     if not user:
-        raise services.ServiceError("Sua sessão expirou. Faça login novamente.", 401)
+        raise services.ServiceError("Nenhum usuário está disponível para iniciar o sistema.", 500)
     return user
 
 
@@ -357,6 +360,20 @@ def api_missing_items_item(item_id: int) -> Response:
     return _json_response({"message": "Item faltante excluído com sucesso."})
 
 
+@app.get("/api/quotes/<int:quote_id>/pdf")
+def api_quote_pdf(quote_id: int) -> Response:
+    _require_user()
+    quote = services.get_quote(quote_id)
+    pdf_bytes = build_quote_pdf_bytes(quote)
+    return send_file(
+        BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=quote_pdf_filename(quote),
+        max_age=0,
+    )
+
+
 @app.route("/api/<entity>", methods=["GET", "POST"])
 def api_collection(entity: str) -> Response:
     user = _require_user()
@@ -421,6 +438,7 @@ def frontend(path: str) -> Response:
 
 _bootstrap_database_if_enabled()
 run_runtime_migrations()
+services.ensure_demo_user()
 
 
 if __name__ == "__main__":

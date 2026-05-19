@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import unicodedata
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from openpyxl import Workbook
@@ -166,6 +166,13 @@ def _normalize_quote_unit(value: Any) -> str:
     if normalized not in QUOTE_ITEM_UNITS:
         raise ServiceError(f"Selecione uma unidade válida no orçamento. Opções: {', '.join(QUOTE_ITEM_UNITS)}.")
     return normalized
+
+
+def _default_quote_validity(quote_date_value: str) -> str:
+    parsed_date = parse_iso_date(quote_date_value)
+    if not parsed_date:
+        parsed_date = date.today()
+    return (parsed_date + timedelta(days=7)).isoformat()
 
 
 def _normalize_sale_time(value: Any) -> str:
@@ -714,6 +721,21 @@ def get_user_by_id(user_id: int | str | None) -> dict[str, Any] | None:
     return _serialize_user(row)
 
 
+def get_primary_user() -> dict[str, Any] | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM users
+            ORDER BY CASE WHEN LOWER(username) = 'admin' THEN 0 ELSE 1 END, id
+            LIMIT 1
+            """
+        ).fetchone()
+    if not row:
+        return None
+    return _serialize_user(row)
+
+
 def list_products() -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
@@ -1249,9 +1271,16 @@ def list_quotes() -> list[dict[str, Any]]:
     return _serialize_quote_rows(rows, items_rows)
 
 
+def get_quote(quote_id: int) -> dict[str, Any]:
+    try:
+        return next(quote for quote in list_quotes() if quote["id"] == quote_id)
+    except StopIteration as exc:
+        raise ServiceError("Orçamento não encontrado.", 404) from exc
+
+
 def create_quote(payload: dict[str, Any]) -> dict[str, Any]:
     quote_date = ensure_date(payload.get("quote_date"))
-    validity_date = ensure_date(payload.get("validity_date"), quote_date)
+    validity_date = ensure_date(payload.get("validity_date"), _default_quote_validity(quote_date))
     status = payload.get("status") or "Pendente"
     if status not in QUOTE_STATUSES:
         raise ServiceError("Escolha um status de orçamento válido.")
@@ -1302,7 +1331,7 @@ def create_quote(payload: dict[str, Any]) -> dict[str, Any]:
                     item["total_price"],
                 ),
             )
-    return next(quote for quote in list_quotes() if quote["id"] == quote_id)
+    return get_quote(quote_id)
 
 
 def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1329,6 +1358,7 @@ def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         if discount_amount > subtotal_amount:
             raise ServiceError("O desconto não pode ser maior que o subtotal do orçamento.")
         total_amount = round_money(subtotal_amount - discount_amount)
+        next_quote_date = ensure_date(payload.get("quote_date"), existing["quote_date"])
 
         connection.execute(
             """
@@ -1338,8 +1368,11 @@ def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
             WHERE id = ?
             """,
             (
-                ensure_date(payload.get("quote_date"), existing["quote_date"]),
-                ensure_date(payload.get("validity_date"), existing["validity_date"] or existing["quote_date"]),
+                next_quote_date,
+                ensure_date(
+                    payload.get("validity_date"),
+                    existing["validity_date"] or _default_quote_validity(next_quote_date),
+                ),
                 int(payload["customer_id"]) if payload.get("customer_id") else None,
                 customer_name_manual or None,
                 subtotal_amount,
@@ -1367,7 +1400,7 @@ def update_quote(quote_id: int, payload: dict[str, Any]) -> dict[str, Any]:
                     item["total_price"],
                 ),
             )
-    return next(quote for quote in list_quotes() if quote["id"] == quote_id)
+    return get_quote(quote_id)
 
 
 def delete_quote(quote_id: int) -> None:
