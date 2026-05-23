@@ -4,7 +4,7 @@ const APP_SHELL = [
   "/",
   "/index.html",
   `/manifest.webmanifest?v=${ICON_VERSION}`,
-  "/static/css/styles.css",
+  "/static/css/styles.css?v=green-theme-20260523",
   "/static/js/app.js",
   "/static/js/api.js",
   "/static/js/helpers.js",

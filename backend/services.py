@@ -33,7 +33,47 @@ PAYMENT_METHOD_ALIASES = {
     "outros": "Outros",
 }
 PRODUCT_UNITS = ["UN", "KG", "M3", "M2", "SC", "RL", "CH", "LT", "CX"]
-QUOTE_ITEM_UNITS = ["UN", "MT", "M²", "M³", "KG", "SC", "CX", "PCT", "LT", "Outro"]
+QUOTE_ITEM_UNITS = [
+    "Unidade",
+    "Metro",
+    "Metro Quadrado",
+    "Metro C\u00fabico",
+    "Litro",
+    "Lata",
+    "Saco",
+    "Fardo",
+    "Cento",
+    "Tonelada",
+    "Quilograma",
+]
+QUOTE_ITEM_UNIT_ALIASES = {
+    "un": "Unidade",
+    "unidade": "Unidade",
+    "mt": "Metro",
+    "m": "Metro",
+    "metro": "Metro",
+    "m2": "Metro Quadrado",
+    "m\u00b2": "Metro Quadrado",
+    "metroquadrado": "Metro Quadrado",
+    "m3": "Metro C\u00fabico",
+    "m\u00b3": "Metro C\u00fabico",
+    "metrocubico": "Metro C\u00fabico",
+    "lt": "Litro",
+    "l": "Litro",
+    "litro": "Litro",
+    "lata": "Lata",
+    "sc": "Saco",
+    "saco": "Saco",
+    "fd": "Fardo",
+    "fardo": "Fardo",
+    "ct": "Cento",
+    "cento": "Cento",
+    "ton": "Tonelada",
+    "t": "Tonelada",
+    "tonelada": "Tonelada",
+    "kg": "Quilograma",
+    "quilograma": "Quilograma",
+}
 QUOTE_STATUSES = ["Pendente", "Aprovado", "Cancelado", "Nao aprovado"]
 CHECK_STATUSES = ["Pendente", "Compensado", "Atrasado", "Cancelado"]
 BILL_STATUSES = ["Pendente", "Pago", "Vencendo hoje", "Atrasado"]
@@ -162,11 +202,11 @@ def _normalize_product_unit(value: Any) -> str:
 
 
 def _normalize_quote_unit(value: Any) -> str:
-    normalized = _clean_text(value) or "UN"
+    cleaned = _clean_text(value) or "Unidade"
+    normalized = QUOTE_ITEM_UNIT_ALIASES.get(_normalize_lookup_text(cleaned), cleaned)
     if normalized not in QUOTE_ITEM_UNITS:
-        raise ServiceError(f"Selecione uma unidade válida no orçamento. Opções: {', '.join(QUOTE_ITEM_UNITS)}.")
+        raise ServiceError(f"Selecione uma unidade valida no orcamento. Opcoes: {', '.join(QUOTE_ITEM_UNITS)}.")
     return normalized
-
 
 def _default_quote_validity(quote_date_value: str) -> str:
     parsed_date = parse_iso_date(quote_date_value)
@@ -1222,7 +1262,7 @@ def _serialize_quote_rows(rows: list[dict[str, Any]], items_rows: list[dict[str,
                 "product_id": row["product_id"],
                 "item_name": row["item_name"],
                 "product_name": row["item_name"],
-                "unit": row["unit"],
+                "unit": _normalize_quote_unit(row["unit"]),
                 "quantity": row["quantity"],
                 "unit_price": row["unit_price"],
                 "total_price": row["total_price"],
