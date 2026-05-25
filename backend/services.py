@@ -77,6 +77,7 @@ QUOTE_ITEM_UNIT_ALIASES = {
 QUOTE_STATUSES = ["Pendente", "Aprovado", "Cancelado", "Nao aprovado"]
 CHECK_STATUSES = ["Pendente", "Compensado", "Atrasado", "Cancelado"]
 BILL_STATUSES = ["Pendente", "Pago", "Vencendo hoje", "Atrasado"]
+MISSING_ITEM_STATUSES = ["Pendente", "Solicitado", "Recebido"]
 STOCK_MOVEMENT_TYPES = ["ENTRADA", "SAIDA", "AJUSTE"]
 FISCAL_ENVIRONMENTS = ["homologation", "production"]
 FISCAL_PROVIDER_OPTIONS = ["mock", "focus_nfe", "nfe_io", "tecnospeed"]
@@ -2000,10 +2001,44 @@ def delete_bill(bill_id: int) -> None:
         raise ServiceError("Boleto nÃ£o encontrado.", 404)
 
 
+def _normalize_missing_item_status(
+    value: Any,
+    *,
+    requested_at: Any = None,
+    received_at: Any = None,
+    default: str = "Pendente",
+) -> str:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        if _clean_text(received_at):
+            return "Recebido"
+        if _clean_text(requested_at):
+            return "Solicitado"
+        return default
+
+    normalized = cleaned.casefold()
+    for status in MISSING_ITEM_STATUSES:
+        if normalized == status.casefold():
+            return status
+
+    raise ServiceError("Escolha um status valido para o item faltante.")
+
+
 def _serialize_missing_item_row(row: dict[str, Any]) -> dict[str, Any]:
+    status = _normalize_missing_item_status(
+        row.get("status"),
+        requested_at=row.get("requested_at"),
+        received_at=row.get("received_at"),
+    )
     return {
         "id": int(row["id"]),
         "name": row["name"],
+        "status": status,
+        "effective_status": status,
+        "requested_at": row.get("requested_at"),
+        "received_at": row.get("received_at"),
+        "is_requested": status == "Solicitado",
+        "is_received": status == "Recebido",
     }
 
 
@@ -2011,7 +2046,7 @@ def list_missing_items() -> list[dict[str, Any]]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT id, name
+            SELECT id, name, status, requested_at, received_at
             FROM missing_items
             ORDER BY id DESC
             """
@@ -2023,7 +2058,7 @@ def get_missing_item(item_id: int) -> dict[str, Any]:
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT id, name
+            SELECT id, name, status, requested_at, received_at
             FROM missing_items
             WHERE id = ?
             """,
@@ -2039,25 +2074,50 @@ def create_missing_item(payload: dict[str, Any]) -> dict[str, Any]:
     with get_connection() as connection:
         cursor = connection.execute(
             """
-            INSERT INTO missing_items (name)
-            VALUES (?)
+            INSERT INTO missing_items (name, status, requested_at, received_at)
+            VALUES (?, ?, ?, ?)
             """,
-            (name,),
+            (name, "Pendente", None, None),
         )
         item_id = cursor.lastrowid
     return get_missing_item(item_id)
 
 
 def update_missing_item(item_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-    name = _require_text(payload.get("name"), "name")
+    current = get_missing_item(item_id)
+    name = current["name"]
+    if "name" in payload:
+        name = _require_text(payload.get("name"), "name")
+
+    status = current["status"]
+    if "status" in payload:
+        status = _normalize_missing_item_status(
+            payload.get("status"),
+            requested_at=current.get("requested_at"),
+            received_at=current.get("received_at"),
+            default=current["status"],
+        )
+
+    requested_at = current.get("requested_at")
+    received_at = current.get("received_at")
+    now = iso_now()
+    if status == "Pendente":
+        requested_at = None
+        received_at = None
+    elif status == "Solicitado":
+        requested_at = requested_at or now
+        received_at = None
+    elif status == "Recebido":
+        received_at = received_at or now
+
     with get_connection() as connection:
         updated = connection.execute(
             """
             UPDATE missing_items
-            SET name = ?
+            SET name = ?, status = ?, requested_at = ?, received_at = ?
             WHERE id = ?
             """,
-            (name, item_id),
+            (name, status, requested_at, received_at, item_id),
         ).rowcount
     if not updated:
         raise ServiceError("Item faltante nÃ£o encontrado.", 404)

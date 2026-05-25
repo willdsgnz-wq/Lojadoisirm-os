@@ -3707,6 +3707,10 @@ button.nfe-flow-dashboard-step {
   padding: 18px 22px;
 }
 
+.checks-form-card {
+  padding: 22px 26px;
+}
+
 .checks-section-title {
   display: flex;
   align-items: center;
@@ -3736,6 +3740,17 @@ button.nfe-flow-dashboard-step {
   margin: 0;
   color: #10244a;
   font-size: 1.16rem;
+}
+
+.checks-form-divider {
+  height: 1px;
+  margin-bottom: 20px;
+  background: rgba(111, 126, 151, 0.22);
+}
+
+.checks-form-fields {
+  display: grid;
+  gap: 22px;
 }
 
 .checks-details-grid {
@@ -4102,6 +4117,39 @@ button.nfe-flow-dashboard-step {
 
 .checks-cell-summary strong {
   color: #0f172a;
+}
+
+.bills-data-table {
+  min-width: 1040px;
+}
+
+.bills-cell-beneficiary {
+  min-width: 220px;
+}
+
+.bills-cell-beneficiary small,
+.bills-cell-summary small {
+  display: block;
+  line-height: 1.45;
+}
+
+.bills-cell-beneficiary small {
+  margin-top: 6px;
+  color: #475569;
+}
+
+.bills-cell-payment {
+  white-space: nowrap;
+}
+
+.bills-data-table .bill-payment-toggle,
+.bills-data-table .bill-payment-state {
+  justify-content: center;
+  min-width: 170px;
+}
+
+.bills-data-table .bill-payment-toggle {
+  width: auto;
 }
 
 .checks-cell-actions .table-actions {
@@ -8131,6 +8179,10 @@ button.nfe-flow-dashboard-step {
     padding: 16px;
   }
 
+  .checks-form-card {
+    padding: 18px 16px;
+  }
+
   .checks-studio-metric {
     padding: 18px;
   }
@@ -9253,7 +9305,7 @@ html[data-desktop-shell="electron"] .sales-summary-card {
 
 .missing-items-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 22px;
 }
 
@@ -9343,6 +9395,10 @@ html[data-desktop-shell="electron"] .sales-summary-card {
 
 .missing-items-metric-pending strong {
   color: #d97706;
+}
+
+.missing-items-metric-requested strong {
+  color: #0f766e;
 }
 
 .missing-items-metric-received strong {
@@ -9579,7 +9635,7 @@ html[data-desktop-shell="electron"] .sales-summary-card {
 
 .missing-items-table {
   width: 100%;
-  min-width: 840px;
+  min-width: 1080px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -9613,7 +9669,12 @@ html[data-desktop-shell="electron"] .sales-summary-card {
 
 .missing-items-table th:nth-child(3),
 .missing-items-table td:nth-child(3) {
-  width: 260px;
+  width: 250px;
+}
+
+.missing-items-table th:nth-child(4),
+.missing-items-table td:nth-child(4) {
+  width: 250px;
 }
 
 .missing-items-table th:last-child,
@@ -9687,13 +9748,19 @@ html[data-desktop-shell="electron"] .sales-summary-card {
   color: #d97706;
 }
 
+.missing-item-status-badge.is-requested {
+  background: #dff7f4;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  color: #0f766e;
+}
+
 .missing-item-status-badge.is-received {
   background: #dcfce7;
   border: 1px solid rgba(15, 122, 77, 0.14);
   color: #0f7a4d;
 }
 
-.missing-item-arrival-switch {
+.missing-item-status-switch {
   display: inline-flex;
   align-items: center;
   gap: 12px;
@@ -9707,12 +9774,13 @@ html[data-desktop-shell="electron"] .sales-summary-card {
   cursor: pointer;
 }
 
-.missing-item-arrival-switch:disabled {
+.missing-item-status-switch:disabled {
   cursor: default;
+  opacity: 0.72;
 }
 
-.missing-item-arrival-switch > span:last-child,
-.missing-item-arrival-switch .missing-item-switch-track + span {
+.missing-item-status-switch > span:last-child,
+.missing-item-status-switch .missing-item-switch-track + span {
   white-space: nowrap;
 }
 
@@ -9740,11 +9808,11 @@ html[data-desktop-shell="electron"] .sales-summary-card {
   transition: transform 0.2s ease;
 }
 
-.missing-item-arrival-switch:hover .missing-item-switch-track {
+.missing-item-status-switch:hover .missing-item-switch-track {
   box-shadow: inset 0 2px 5px rgba(15, 23, 18, 0.16), 0 0 0 4px rgba(16, 166, 106, 0.08);
 }
 
-.missing-item-arrival-switch.is-on {
+.missing-item-status-switch.is-on {
   color: #0f7a4d;
 }
 
@@ -9752,7 +9820,19 @@ html[data-desktop-shell="electron"] .sales-summary-card {
   background: linear-gradient(135deg, #0f7a4d, #38a169);
 }
 
-.missing-item-arrival-switch.is-on .missing-item-switch-thumb {
+.missing-item-requested-switch:hover .missing-item-switch-track {
+  box-shadow: inset 0 2px 5px rgba(15, 23, 18, 0.16), 0 0 0 4px rgba(15, 118, 110, 0.08);
+}
+
+.missing-item-requested-switch.is-on {
+  color: #0f766e;
+}
+
+.missing-item-requested-switch.is-on .missing-item-switch-track {
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+}
+
+.missing-item-status-switch.is-on .missing-item-switch-thumb {
   transform: translateX(20px);
 }
 
@@ -9849,7 +9929,7 @@ html[data-desktop-shell="electron"] .sales-summary-card {
 
 @media (max-width: 980px) {
   .missing-items-metrics-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .missing-items-list-header,
@@ -9870,6 +9950,10 @@ html[data-desktop-shell="electron"] .sales-summary-card {
 }
 
 @media (max-width: 620px) {
+  .missing-items-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
   .missing-items-card,
   .missing-items-metric {
     padding: 18px;

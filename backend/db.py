@@ -167,8 +167,28 @@ def run_runtime_migrations() -> None:
         """
         CREATE TABLE IF NOT EXISTS missing_items (
             id BIGSERIAL PRIMARY KEY,
-            name TEXT NOT NULL
+            name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'Pendente',
+            requested_at TEXT,
+            received_at TEXT
         )
+        """,
+        """
+        ALTER TABLE IF EXISTS missing_items
+        ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Pendente'
+        """,
+        """
+        ALTER TABLE IF EXISTS missing_items
+        ADD COLUMN IF NOT EXISTS requested_at TEXT
+        """,
+        """
+        ALTER TABLE IF EXISTS missing_items
+        ADD COLUMN IF NOT EXISTS received_at TEXT
+        """,
+        """
+        UPDATE missing_items
+        SET status = 'Pendente'
+        WHERE status IS NULL OR BTRIM(status) = ''
         """,
         """
         ALTER TABLE IF EXISTS quotes

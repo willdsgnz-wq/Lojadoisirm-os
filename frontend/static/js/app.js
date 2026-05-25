@@ -271,7 +271,7 @@ const PROFILE_ICON_MAP = {
 const BRAND_LOGO_PATH = "/assets/brand/logo_dois_irmaos_final.png";
 const PRODUCTS_PER_PAGE = 10;
 const SALES_HISTORY_PER_PAGE = 5;
-const BILLS_CARDS_PER_PAGE = 9;
+const BILLS_CARDS_PER_PAGE = 10;
 const MISSING_ITEMS_PER_PAGE = 5;
 const SEARCH_INPUT_DEBOUNCE_MS = 250;
 const PRODUCT_ORIGIN_OPTIONS = [
@@ -5254,6 +5254,7 @@ function getBillCardState(bill) {
   if (bill.is_paid) {
     return {
       cardClass: "is-paid",
+      rowClass: "",
       label: "Pagamento confirmado",
       helper: "Quitado no sistema",
     };
@@ -5262,6 +5263,7 @@ function getBillCardState(bill) {
   if (bill.is_overdue) {
     return {
       cardClass: "is-overdue",
+      rowClass: "row-danger",
       label: "Boleto vencido",
       helper: `${formatNumber(bill.days_overdue)} dia(s) de atraso`,
     };
@@ -5270,6 +5272,7 @@ function getBillCardState(bill) {
   if (bill.is_due_today) {
     return {
       cardClass: "is-due-today",
+      rowClass: "row-warning",
       label: "Vence hoje",
       helper: "Requer atenção imediata",
     };
@@ -5277,6 +5280,7 @@ function getBillCardState(bill) {
 
   return {
     cardClass: "is-pending",
+    rowClass: "",
     label: "Em acompanhamento",
     helper: "Pagamento pendente",
   };
@@ -5367,16 +5371,6 @@ function renderBillsDashboardSection() {
 
   return `
     <section class="dashboard-grid">
-      ${renderBarChart({
-        title: "Boletos por semana",
-        subtitle: "Agrupado pela data de vencimento",
-        data: groupByWeek(billsInPeriod, "due_date", (bill) => bill.amount, 8),
-      })}
-      ${renderBarChart({
-        title: "Boletos por mês",
-        subtitle: "Agrupado pela data de vencimento",
-        data: groupByMonth(billsInPeriod, "due_date", (bill) => bill.amount, 6),
-      })}
       ${renderStatList({
         title: "Quantidade por status",
         subtitle: period.label,
@@ -5418,49 +5412,42 @@ function renderBillsListPanel() {
         <span>${BILLS_CARDS_PER_PAGE} por página</span>
       </div>
       ${filteredBills.length ? `
-        <div class="bills-board-grid">
-          ${pagedBills.map((bill) => {
-            const cardState = getBillCardState(bill);
-            return `
-              <article class="bill-card ${cardState.cardClass}">
-                <div class="bill-card-top">
-                  <div class="bill-card-title">
-                    <span class="bill-card-kicker">${escapeHtml(cardState.label)}</span>
-                    <strong>${escapeHtml(bill.beneficiary)}</strong>
-                  </div>
-                  <div class="bill-card-status">
-                    ${renderBadge(bill.effective_status, statusTone(bill.effective_status))}
-                  </div>
-                </div>
-                <div class="bill-card-meta">
-                  <div class="bill-card-meta-item">
-                    <span>Vencimento</span>
-                    <strong>${formatDate(bill.due_date)}</strong>
-                  </div>
-                  <div class="bill-card-meta-item">
-                    <span>Valor</span>
-                    <strong>${formatMoney(bill.amount)}</strong>
-                  </div>
-                  <div class="bill-card-meta-item bill-card-meta-item-wide">
-                    <span>Status do acompanhamento</span>
-                    <strong>${escapeHtml(cardState.helper)}</strong>
-                  </div>
-                </div>
-                ${bill.notes ? `
-                  <div class="bill-card-notes">
-                    <span>Observações</span>
-                    <p>${escapeHtml(bill.notes)}</p>
-                  </div>
-                ` : ""}
-                <div class="bill-card-footer">
-                  <div class="bill-card-payment">
-                    ${renderBillPaidToggle(bill)}
-                  </div>
-                  ${renderBillCardActions(bill.id)}
-                </div>
-              </article>
-            `;
-          }).join("")}
+        <div class="table-wrapper checks-table-wrapper">
+          <table class="data-table checks-data-table bills-data-table">
+            <thead>
+              <tr>
+                <th>Beneficiário</th>
+                <th>Valor</th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th>Pagamento</th>
+                <th>Resumo</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pagedBills.map((bill) => {
+                const cardState = getBillCardState(bill);
+                return `
+                  <tr class="${cardState.rowClass}">
+                    <td class="bills-cell-beneficiary">
+                      <strong>${escapeHtml(bill.beneficiary)}</strong>
+                      ${bill.notes ? `<small><strong>Obs.:</strong> ${escapeHtml(bill.notes)}</small>` : ""}
+                    </td>
+                    <td class="checks-cell-money">${formatMoney(bill.amount)}</td>
+                    <td class="checks-cell-date">${formatDate(bill.due_date)}</td>
+                    <td class="checks-cell-status">${renderBadge(bill.effective_status, statusTone(bill.effective_status))}</td>
+                    <td class="checks-cell-compensation bills-cell-payment">${renderBillPaidToggle(bill)}</td>
+                    <td class="checks-cell-summary bills-cell-summary">
+                      <small><strong>Situação:</strong> ${escapeHtml(cardState.label)}</small>
+                      <small><strong>Acompanhamento:</strong> ${escapeHtml(cardState.helper)}</small>
+                    </td>
+                    <td class="checks-cell-actions">${renderBillCardActions(bill.id)}</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </div>
         <div class="table-pagination checks-table-pagination bills-board-pagination">
           <div class="checks-pagination-summary">
@@ -8037,9 +8024,21 @@ function getFilteredMissingItems() {
 }
 
 
+function getMissingItemStatus(item) {
+  const rawStatus = String(item?.status || item?.effective_status || "").trim().toLowerCase();
+  if (rawStatus.includes("receb")) return "Recebido";
+  if (rawStatus.includes("solicit")) return "Solicitado";
+  return "Pendente";
+}
+
+
+function isMissingItemRequested(item) {
+  return getMissingItemStatus(item) === "Solicitado";
+}
+
+
 function isMissingItemReceived(item) {
-  const status = String(item.status || item.effective_status || "").toLowerCase();
-  return Boolean(item.received_at || item.arrived_at || item.arrival_date || item.is_received || status.includes("receb"));
+  return getMissingItemStatus(item) === "Recebido";
 }
 
 
@@ -8050,10 +8049,13 @@ function getMissingItemReceivedDate(item) {
 
 function getMissingItemsSummaryData() {
   const total = state.data.missing_items.length;
-  const received = state.data.missing_items.filter(isMissingItemReceived).length;
+  const pending = state.data.missing_items.filter((item) => getMissingItemStatus(item) === "Pendente").length;
+  const requested = state.data.missing_items.filter((item) => getMissingItemStatus(item) === "Solicitado").length;
+  const received = state.data.missing_items.filter((item) => getMissingItemStatus(item) === "Recebido").length;
   return {
     total,
-    pending: Math.max(total - received, 0),
+    pending,
+    requested,
     received,
   };
 }
@@ -8087,8 +8089,15 @@ function renderMissingItemsMetrics() {
       icon: renderSalesIcon("clock"),
       label: "Pendentes",
       value: formatNumber(summary.pending),
-      helper: "Aguardando reposição",
+      helper: "Ainda não solicitados",
       tone: "pending",
+    },
+    {
+      icon: renderChecksPageIcon("edit"),
+      label: "Solicitados",
+      value: formatNumber(summary.requested),
+      helper: "Pedido ao fornecedor",
+      tone: "requested",
     },
     {
       icon: renderChecksPageIcon("check"),
@@ -8134,20 +8143,55 @@ function renderMissingItemsFormFeedback() {
 
 
 function renderMissingItemStatusBadge(item) {
-  if (isMissingItemReceived(item)) {
-    return `
-      <span class="missing-item-status-badge is-received">
-        <span aria-hidden="true">${renderChecksPageIcon("check")}</span>
-        Recebido
-      </span>
-    `;
-  }
+  const status = getMissingItemStatus(item);
+  const config = {
+    Pendente: {
+      className: "is-pending",
+      icon: renderSalesIcon("clock"),
+      label: "Pendente",
+    },
+    Solicitado: {
+      className: "is-requested",
+      icon: renderChecksPageIcon("edit"),
+      label: "Solicitado",
+    },
+    Recebido: {
+      className: "is-received",
+      icon: renderChecksPageIcon("check"),
+      label: "Recebido",
+    },
+  }[status];
 
   return `
-    <span class="missing-item-status-badge is-pending">
-      <span aria-hidden="true">${renderSalesIcon("clock")}</span>
-      Pendente
+    <span class="missing-item-status-badge ${config.className}">
+      <span aria-hidden="true">${config.icon}</span>
+      ${config.label}
     </span>
+  `;
+}
+
+
+function renderMissingItemRequestedControl(item) {
+  const isRequested = isMissingItemRequested(item);
+  const isReceived = isMissingItemReceived(item);
+  const label = isRequested ? "Solicitado" : "Marcar como solicitado";
+
+  return `
+    <button
+      type="button"
+      class="missing-item-status-switch missing-item-requested-switch ${isRequested ? "is-on" : ""}"
+      data-action="toggle-missing-item-requested"
+      data-id="${item.id}"
+      data-requested="${isRequested ? "true" : "false"}"
+      role="switch"
+      aria-checked="${isRequested ? "true" : "false"}"
+      ${isReceived ? "disabled" : ""}
+    >
+      <span class="missing-item-switch-track" aria-hidden="true">
+        <span class="missing-item-switch-thumb"></span>
+      </span>
+      <span>${escapeHtml(label)}</span>
+    </button>
   `;
 }
 
@@ -8162,7 +8206,7 @@ function renderMissingItemArrivalControl(item) {
   return `
     <button
       type="button"
-      class="missing-item-arrival-switch ${isReceived ? "is-on" : ""}"
+      class="missing-item-status-switch missing-item-arrival-switch ${isReceived ? "is-on" : ""}"
       data-action="request-missing-item-arrived"
       data-id="${item.id}"
       role="switch"
@@ -8200,6 +8244,7 @@ function renderMissingItemsListResults() {
           <tr>
             <th>ITEM</th>
             <th>STATUS</th>
+            <th>SOLICITADO</th>
             <th>CHEGOU</th>
             <th>AÇÕES</th>
           </tr>
@@ -8214,6 +8259,7 @@ function renderMissingItemsListResults() {
                 </div>
               </td>
               <td>${renderMissingItemStatusBadge(item)}</td>
+              <td>${renderMissingItemRequestedControl(item)}</td>
               <td>${renderMissingItemArrivalControl(item)}</td>
               <td>
                 <button type="button" class="missing-item-delete-button" data-action="delete-missing-item" data-id="${item.id}" title="Excluir item" aria-label="Excluir item">
@@ -8495,7 +8541,7 @@ function renderBillsPage() {
 
 function renderChecksPage() {
   const editing = state.editing.checks;
-  const formTitle = editing ? "Editar cheque" : "Dados do cheque";
+  const formTitle = editing ? "Editar cheque" : "Adicionar Cheque";
 
   return `
     <section class="checks-studio-page">
@@ -8515,53 +8561,49 @@ function renderChecksPage() {
         <input type="hidden" name="id" value="${editing?.id ?? ""}">
         ${renderFormFeedback("checks")}
 
-        <section class="checks-studio-card checks-details-card">
+        <section class="checks-studio-card checks-form-card">
           <div class="checks-section-title">
-            <span aria-hidden="true">${renderChecksPageIcon("user")}</span>
+            <span aria-hidden="true">${renderChecksPageIcon(editing ? "edit" : "plus")}</span>
             <h3>${escapeHtml(formTitle)}</h3>
           </div>
-          <div class="checks-details-grid">
-            <label>
-              <span>Número do cheque <em>*</em></span>
-              <input type="text" name="check_number" value="${escapeHtml(toFormValue(editing?.check_number))}" placeholder="Ex.: 123456" required>
-            </label>
-            <label>
-              <span>Emitente / Cliente <em>*</em></span>
-              <input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" placeholder="Nome do emitente ou cliente" required>
-            </label>
-            <label>
-              <span>Observações</span>
-              <input type="text" name="notes" value="${escapeHtml(toFormValue(editing?.notes))}" placeholder="Ex.: banco, acordo, condição, etc.">
-            </label>
-          </div>
-        </section>
-
-        <section class="checks-studio-card checks-entry-card">
-          <div class="checks-section-title">
-            <span aria-hidden="true">${renderChecksPageIcon("file")}</span>
-            <h3>${editing ? "Atualizar cheque" : "Adicionar cheque"}</h3>
-          </div>
-          <div class="checks-entry-grid">
-            <label>
-              <span>Valor <em>*</em></span>
-              ${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}
-            </label>
-            <label>
-              <span>Data de emissão <em>*</em></span>
-              <input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required>
-            </label>
-            <label>
-              <span>Vencimento <em>*</em></span>
-              <input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required>
-            </label>
-            <label>
-              <span>Status <em>*</em></span>
-              <select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select>
-            </label>
-            <button type="submit" class="btn btn-primary checks-add-button">
-              ${renderChecksPageIcon("plus")}
-              ${editing ? "Salvar cheque" : "Adicionar cheque"}
-            </button>
+          <div class="checks-form-divider" aria-hidden="true"></div>
+          <div class="checks-form-fields">
+            <div class="checks-details-grid">
+              <label>
+                <span>Número do cheque <em>*</em></span>
+                <input type="text" name="check_number" value="${escapeHtml(toFormValue(editing?.check_number))}" placeholder="Ex.: 123456" required>
+              </label>
+              <label>
+                <span>Emitente / Cliente <em>*</em></span>
+                <input type="text" name="beneficiary" value="${escapeHtml(toFormValue(editing?.beneficiary))}" placeholder="Nome do emitente ou cliente" required>
+              </label>
+              <label>
+                <span>Observações</span>
+                <input type="text" name="notes" value="${escapeHtml(toFormValue(editing?.notes))}" placeholder="Ex.: banco, acordo, condição, etc.">
+              </label>
+            </div>
+            <div class="checks-entry-grid">
+              <label>
+                <span>Valor <em>*</em></span>
+                ${renderMoneyInput({ name: "amount", value: editing?.amount ?? 0, required: true })}
+              </label>
+              <label>
+                <span>Data de emissão <em>*</em></span>
+                <input type="date" name="issue_date" value="${editing?.issue_date || todayIso()}" required>
+              </label>
+              <label>
+                <span>Vencimento <em>*</em></span>
+                <input type="date" name="due_date" value="${editing?.due_date || todayIso()}" required>
+              </label>
+              <label>
+                <span>Status <em>*</em></span>
+                <select name="status" required>${renderCheckStatusOptions(editing?.status || "Pendente")}</select>
+              </label>
+              <button type="submit" class="btn btn-primary checks-add-button">
+                ${renderChecksPageIcon("plus")}
+                ${editing ? "Salvar cheque" : "Adicionar cheque"}
+              </button>
+            </div>
           </div>
         </section>
       </form>
@@ -9115,6 +9157,9 @@ function handlePageClick(event) {
     "apply-missing-items-filter": () => {
       state.filters.missing_items.page = 1;
       renderCurrentPage();
+    },
+    "toggle-missing-item-requested": () => {
+      void toggleMissingItemRequested(id, button.dataset.requested === "true");
     },
     "request-missing-item-arrived": () => {
       void markMissingItemArrived(id);
@@ -9842,11 +9887,32 @@ async function markMissingItemArrived(id) {
   }
 
   try {
-    await api.remove("missing-items", id);
+    await api.update("missing-items", id, { status: "Recebido" });
     state.editing.missing_items = null;
     clearFormFeedback("missing_items");
     await loadData();
     showToast("Item marcado como recebido.");
+  } catch (error) {
+    showToast(error.message, "error");
+    await loadData();
+  }
+}
+
+
+async function toggleMissingItemRequested(id, isCurrentlyRequested) {
+  if (!id) return;
+
+  const nextStatus = isCurrentlyRequested ? "Pendente" : "Solicitado";
+  try {
+    await api.update("missing-items", id, { status: nextStatus });
+    state.editing.missing_items = null;
+    clearFormFeedback("missing_items");
+    await loadData();
+    showToast(
+      nextStatus === "Solicitado"
+        ? "Item marcado como solicitado."
+        : "Item voltou para pendente.",
+    );
   } catch (error) {
     showToast(error.message, "error");
     await loadData();

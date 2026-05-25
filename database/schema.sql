@@ -184,7 +184,10 @@ CREATE TABLE IF NOT EXISTS bills (
 -- =========================
 CREATE TABLE IF NOT EXISTS missing_items (
     id BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Pendente',
+    requested_at TEXT,
+    received_at TEXT
 );
 
 -- =========================
